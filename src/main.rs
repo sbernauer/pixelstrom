@@ -1,7 +1,8 @@
 use std::{ops::Deref, sync::Arc, time::Duration};
 
 use http_api::build_router;
-use tokio::{sync::broadcast::Sender, time::interval};
+use tokio::{net::TcpListener, sync::broadcast::Sender, time::interval};
+use tracing::info;
 
 use crate::app_state::AppState;
 
@@ -29,14 +30,15 @@ async fn main() {
     let shared_state_for_loop = shared_state.clone();
     tokio::spawn(async move { random_color_loop(shared_state_for_loop, screen_sync_tx).await });
 
-    let router = build_router(shared_state);
-
-    // Serve the app
-    println!("Server running at http://localhost:3000");
-    axum::Server::bind(&"[::]:3000".parse().unwrap())
-        .serve(router.into_make_service())
+    let app = build_router(shared_state);
+    let listener = TcpListener::bind("0.0.0.0:3000")
         .await
-        .unwrap();
+        .expect("Failed to bind to 0.0.0.0:3000");
+
+    info!("Starting server at http://localhost:3000");
+    axum::serve(listener, app)
+        .await
+        .expect("Failed to start server");
 }
 
 async fn random_color_loop(shared_state: Arc<AppState>, screen_sync_tx: Sender<ScreenSync>) {
