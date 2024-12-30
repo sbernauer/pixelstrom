@@ -1,0 +1,26 @@
+#screen {
+    /* display: flex; */
+    height: 100%;
+    width: 100%;
+
+    background-color: black;
+}
+
+body {
+    background-color: black;
+
+    /* Make it take up the entire screen without scrolling */
+    /* https://stackoverflow.com/questions/41274876/how-to-fit-the-webpage-exactly-the-screen-size-without-scrolling */
+    height: 97vh;
+}
+
+/* Don't use pixel interpolation */
+/* https://stackoverflow.com/a/7665647 */
+canvas {
+    image-rendering: optimizeSpeed;             /* Older versions of FF          */
+    image-rendering: -moz-crisp-edges;          /* FF 6.0+                       */
+    image-rendering: -webkit-optimize-contrast; /* Safari                        */
+    image-rendering: -o-crisp-edges;            /* OS X & Windows Opera (12.02+) */
+    image-rendering: pixelated;                 /* Awesome future-browsers       */
+    -ms-interpolation-mode: nearest-neighbor;   /* IE                            */
+}
