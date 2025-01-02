@@ -3,7 +3,7 @@ use std::io::Result;
 fn main() -> Result<()> {
     // We could also source protoc by building it:
     // https://docs.rs/prost-build/latest/prost_build/#compiling-protoc-from-source
-    prost_build::compile_protos(&["src/proto/WebSocketMessage.proto"], &["src/"])?;
+    prost_build::compile_protos(&["proto/WebSocketMessage.proto"], &["proto/"])?;
 
     // let javascript_protobuf_bindings_dir = format!("{}/static/proto/", env!("CARGO_MANIFEST_DIR"));
 

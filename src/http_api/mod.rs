@@ -17,7 +17,7 @@ mod websocket;
 
 pub fn build_router(shared_state: Arc<AppState>) -> Router {
     Router::new()
-        .route_service("/", get_service(ServeFile::new("static/index.html")))
+        .route_service("/", get_service(ServeFile::new("./web/static/index.html")))
         .route(
             "/ws",
             get(
@@ -27,6 +27,6 @@ pub fn build_router(shared_state: Arc<AppState>) -> Router {
             ),
         )
         .route("/api/current-screen", get(get_current_screen))
-        .nest_service("/static", get_service(ServeDir::new("./static")))
+        .nest_service("/static", get_service(ServeDir::new("./web/static")))
         .with_state(shared_state)
 }
