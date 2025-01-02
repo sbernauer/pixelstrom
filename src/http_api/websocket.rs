@@ -18,7 +18,7 @@ pub async fn handle_websocket(mut ws: WebSocket, state: State<Arc<AppState>>) {
 
         trace!(bytes = bytes.len(), "Sending websocket message");
 
-        if ws.send(Message::Binary(bytes)).await.is_err() {
+        if ws.send(Message::Binary(bytes.into())).await.is_err() {
             break;
         }
     }
