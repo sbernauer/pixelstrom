@@ -133,11 +133,41 @@ function applyScreenSync(screenSync) {
     ctx.putImageData(imageData, 0, 0);
 }
 
+function applyClientPainting(clientPainting) {
+    console.log(clientPainting.client, "painted", clientPainting.painted.length, "pixels");
+
+    const painted = new Uint8Array(clientPainting.painted);
+    console.log("Got", painted.length, "pixel updates");
+
+    const screen = document.getElementById('screen');
+    const ctx = screen.getContext('2d');
+    const width = screen.width;
+    const height = screen.height;
+
+    const imageData = ctx.getImageData(0, 0, width, height);
+
+    // Every message has 8 bytes
+    for (let byte = 0; byte < painted.length; byte += 8) {
+        const x = (painted[byte + 0] << 8) + painted[byte + 1];
+        const y = (painted[byte + 2] << 8) + painted[byte + 3];
+        const index = 4 * (y * width + x);
+
+        imageData.data[index + 0] = painted[byte + 4]; // Red
+        imageData.data[index + 1] = painted[byte + 5]; // Green
+        imageData.data[index + 2] = painted[byte + 6]; // Blue
+        imageData.data[index + 3] = 255; // Alpha
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+}
+
 function applyWebSocketMessage(webSocketMessage) {
     console.log("Got WebSocketMessage", webSocketMessage, "with payload", webSocketMessage.payload);
     switch(webSocketMessage.payload) {
         case "screenSync":
             applyScreenSync(webSocketMessage.screenSync);
             break;
+        case "clientPainting":
+            applyClientPainting(webSocketMessage.clientPainting);
     }
 }
