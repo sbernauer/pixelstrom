@@ -4,7 +4,10 @@ use http_api::build_router;
 use tokio::{net::TcpListener, sync::broadcast::Sender, time::interval};
 use tracing::info;
 
-use crate::app_state::AppState;
+use crate::{
+    app_state::AppState,
+    proto::{web_socket_message::Payload, WebSocketMessage},
+};
 
 pub mod app_state;
 pub mod framebuffer;
@@ -13,7 +16,6 @@ pub mod http_api;
 pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/pixelstrom.rs"));
 }
-use proto::*;
 
 #[tokio::main]
 async fn main() {
@@ -21,14 +23,12 @@ async fn main() {
 
     let width = 1920;
     let height = 1080;
-    // let width = 50;
-    // let height = 50;
 
-    let (app_state, screen_sync_tx) = AppState::new(width, height);
+    let (app_state, web_socket_message_tx) = AppState::new(width, height);
     let shared_state = Arc::new(app_state);
 
     let shared_state_for_loop = shared_state.clone();
-    tokio::spawn(async move { random_color_loop(shared_state_for_loop, screen_sync_tx).await });
+    tokio::spawn(async move { rainbow_loop(shared_state_for_loop, web_socket_message_tx).await });
 
     let app = build_router(shared_state);
     let listener = TcpListener::bind("0.0.0.0:3000")
@@ -41,7 +41,10 @@ async fn main() {
         .expect("Failed to start server");
 }
 
-async fn random_color_loop(shared_state: Arc<AppState>, screen_sync_tx: Sender<ScreenSync>) {
+async fn rainbow_loop(
+    shared_state: Arc<AppState>,
+    web_socket_message_tx: Sender<WebSocketMessage>,
+) {
     let mut interval = interval(Duration::from_millis(2000));
     loop {
         interval.tick().await;
@@ -51,9 +54,12 @@ async fn random_color_loop(shared_state: Arc<AppState>, screen_sync_tx: Sender<S
         }
 
         let fb = shared_state.framebuffer.read().await;
+        let screen_sync: proto::ScreenSync = fb.deref().into();
 
-        screen_sync_tx
-            .send(fb.deref().into())
+        web_socket_message_tx
+            .send(WebSocketMessage {
+                payload: Some(Payload::ScreenSync(screen_sync)),
+            })
             .expect("Failed to send ScreenSync to channel");
     }
 }

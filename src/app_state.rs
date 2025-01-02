@@ -3,23 +3,23 @@ use tokio::sync::{
     RwLock,
 };
 
-use crate::{framebuffer::FrameBuffer, ScreenSync};
+use crate::{framebuffer::FrameBuffer, proto::WebSocketMessage};
 
 #[derive(Debug)]
 pub struct AppState {
     pub framebuffer: RwLock<FrameBuffer>,
-    pub screen_sync_rx: Receiver<ScreenSync>,
+    pub web_socket_message_rx: Receiver<WebSocketMessage>,
 }
 
 impl AppState {
-    pub fn new(width: u32, height: u32) -> (Self, Sender<ScreenSync>) {
-        let (screen_sync_tx, screen_sync_rx) = broadcast::channel(16);
+    pub fn new(width: u32, height: u32) -> (Self, Sender<WebSocketMessage>) {
+        let (web_socket_message_tx, web_socket_message_rx) = broadcast::channel(16);
         (
             Self {
                 framebuffer: RwLock::new(FrameBuffer::new(width, height)),
-                screen_sync_rx,
+                web_socket_message_rx,
             },
-            screen_sync_tx,
+            web_socket_message_tx,
         )
     }
 }

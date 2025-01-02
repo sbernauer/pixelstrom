@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package pixelstrom;
+
+// Root message for WebSocket communication
+message WebSocketMessage {
+  oneof payload {
+    ScreenSync screen_sync = 2;
+    ClientPainting client_painting = 3;
+  }
+}
+
+// Entire contents of the screen
+message ScreenSync {
+    uint32 width = 1;
+    uint32 height = 2;
+    // width * height * 4 bytes (rgba)
+    bytes pixels = 3;
+}
+
+// Partial update of the screen after a client finished painting
+message ClientPainting {
+    // Name of the client that painted the pixels
+    string client = 1;
+
+    // List of (2 byte x + 2 byte y + 4 byte (rgba)).
+    // Contains multiple entries
+    bytes painted = 2;
+}

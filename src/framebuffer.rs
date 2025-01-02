@@ -1,6 +1,6 @@
 use colorgrad::Gradient;
 
-use crate::ScreenSync;
+use crate::proto::ScreenSync;
 
 #[derive(Debug)]
 pub struct FrameBuffer {

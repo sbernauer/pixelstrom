@@ -5,16 +5,19 @@ use axum::extract::{
     State,
 };
 use prost::Message as _;
-use tracing::info;
+use tracing::{info, trace};
 
 use crate::app_state::AppState;
 
 pub async fn handle_websocket(mut ws: WebSocket, state: State<Arc<AppState>>) {
     info!("Websocket connected");
 
-    let mut rx = state.screen_sync_rx.resubscribe();
-    while let Ok(screen_sync) = rx.recv().await {
-        let bytes = screen_sync.encode_to_vec();
+    let mut rx = state.web_socket_message_rx.resubscribe();
+    while let Ok(web_socket_message) = rx.recv().await {
+        let bytes = web_socket_message.encode_to_vec();
+
+        trace!(bytes = bytes.len(), "Sending websocket message");
+
         if ws.send(Message::Binary(bytes)).await.is_err() {
             break;
         }
