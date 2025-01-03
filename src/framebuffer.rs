@@ -11,8 +11,7 @@ pub struct FrameBuffer {
 
 impl FrameBuffer {
     pub fn new(width: u32, height: u32) -> Self {
-        let mut pixels = Vec::with_capacity(width as usize * height as usize);
-        pixels.resize(pixels.capacity(), 0);
+        let pixels = vec![0; width as usize * height as usize];
 
         Self {
             width,
@@ -25,12 +24,12 @@ impl FrameBuffer {
         self.width * self.height
     }
 
-    pub fn fill_with_random_color(&mut self) {
-        let color = rand::random::<u32>();
-        self.pixels.fill(color);
-        // self.pixels = (0..self.num_pixels()).map(|index| index).collect();
-        // self.pixels.fill(color);
-    }
+    // pub fn fill_with_random_color(&mut self) {
+    //     let color = rand::random::<u32>();
+    //     self.pixels.fill(color);
+    //     // self.pixels = (0..self.num_pixels()).map(|index| index).collect();
+    //     // self.pixels.fill(color);
+    // }
 
     pub fn fill_with_rainbow(&mut self) {
         let gradient = colorgrad::preset::sinebow();
@@ -49,18 +48,18 @@ impl FrameBuffer {
     }
 }
 
-impl Into<ScreenSync> for &FrameBuffer {
-    fn into(self) -> ScreenSync {
+impl From<&FrameBuffer> for ScreenSync {
+    fn from(value: &FrameBuffer) -> Self {
         // TODO: Find more efficient way that works across all endianness
-        let pixels = self
+        let pixels = value
             .pixels
             .iter()
             .flat_map(|pixel| pixel.to_le_bytes())
             .collect();
 
-        ScreenSync {
-            width: self.width,
-            height: self.height,
+        Self {
+            width: value.width,
+            height: value.height,
             pixels,
         }
     }

@@ -1,30 +1,34 @@
 use std::{ops::Deref, sync::Arc, time::Duration};
 
-use http_api::build_router;
+use anyhow::Context;
 use prost::bytes::BufMut;
 use rand::Rng;
-use tokio::{net::TcpListener, sync::broadcast::Sender, time::interval};
-use tracing::info;
+use tokio::{sync::broadcast::Sender, time::interval};
 
 use crate::{
     app_state::AppState,
+    ascii_server::run_ascii_server,
+    http_server::run_http_server,
     proto::{web_socket_message::Payload, ClientPainting, WebSocketMessage},
 };
 
-pub mod app_state;
-pub mod framebuffer;
-pub mod http_api;
+mod app_state;
+mod ascii_server;
+mod framebuffer;
+mod http_server;
 
-pub mod proto {
+mod proto {
     include!(concat!(env!("OUT_DIR"), "/pixelstrom.rs"));
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let width = 1920;
     let height = 1080;
+    let ascii_listener_address = "[::]:1234";
+    let http_listener_address = "[::]:3000";
 
     let (app_state, web_socket_message_tx) = AppState::new(width, height);
     let shared_state = Arc::new(app_state);
@@ -38,21 +42,16 @@ async fn main() {
         async move { random_client_paints_loop(width, height, web_socket_message_tx).await },
     );
 
-    let app = build_router(shared_state);
-    let listener = TcpListener::bind("0.0.0.0:3000")
-        .await
-        .expect("Failed to bind to 0.0.0.0:3000");
+    tokio::spawn(async move { run_ascii_server(ascii_listener_address).await });
+    run_http_server(shared_state, http_listener_address).await?;
 
-    info!("Starting server at http://localhost:3000");
-    axum::serve(listener, app)
-        .await
-        .expect("Failed to start server");
+    Ok(())
 }
 
 async fn rainbow_loop(
     shared_state: Arc<AppState>,
     web_socket_message_tx: Sender<WebSocketMessage>,
-) {
+) -> anyhow::Result<()> {
     let mut interval = interval(Duration::from_millis(2000));
     loop {
         interval.tick().await;
@@ -68,7 +67,7 @@ async fn rainbow_loop(
             .send(WebSocketMessage {
                 payload: Some(Payload::ScreenSync(screen_sync)),
             })
-            .expect("Failed to send ScreenSync to channel");
+            .context("Failed to send ScreenSync to channel")?;
     }
 }
 
@@ -77,7 +76,7 @@ async fn random_client_paints_loop(
     width: u32,
     height: u32,
     web_socket_message_tx: Sender<WebSocketMessage>,
-) {
+) -> anyhow::Result<()> {
     let mut interval = interval(Duration::from_millis(100));
     loop {
         interval.tick().await;
@@ -107,6 +106,6 @@ async fn random_client_paints_loop(
 
         web_socket_message_tx
             .send(ws_message)
-            .expect("Failed to send ClientPainting to channel");
+            .context("Failed to send ClientPainting to channel")?;
     }
 }

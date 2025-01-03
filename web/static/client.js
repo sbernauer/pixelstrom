@@ -6,8 +6,8 @@ package pixelstrom;
 // Root message for WebSocket communication
 message WebSocketMessage {
   oneof payload {
-    ScreenSync screen_sync = 2;
-    ClientPainting client_painting = 3;
+    ScreenSync screen_sync = 1;
+    ClientPainting client_painting = 2;
   }
 }
 
