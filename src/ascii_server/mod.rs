@@ -1,11 +1,19 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+};
 
 use anyhow::Context;
 use futures::{SinkExt, StreamExt};
 use nom::Finish;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::{
+    io::AsyncWriteExt,
+    net::{TcpListener, TcpStream},
+    sync::RwLock,
+};
 use tokio_util::codec::{Framed, LinesCodec};
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 use crate::app_state::AppState;
 use parser::{parse_request, Request, Response};
@@ -13,10 +21,14 @@ use parser::{parse_request, Request, Response};
 mod parser;
 
 const MAX_INPUT_LINE_LENGTH: usize = 1024;
+const MAX_CONNECTIONS_PER_IP: usize = 2;
 
 pub struct AsciiServer {
-    _shared_state: Arc<AppState>,
     listener: TcpListener,
+
+    _shared_state: Arc<AppState>,
+    connections_per_ip: Arc<RwLock<HashMap<IpAddr, usize>>>,
+
     width: u32,
     height: u32,
 }
@@ -34,6 +46,7 @@ impl AsciiServer {
 
         Ok(Self {
             _shared_state: shared_state,
+            connections_per_ip: Default::default(),
             listener,
             width,
             height,
@@ -59,10 +72,36 @@ impl AsciiServer {
 
     async fn handle_connection(
         &self,
-        socket: TcpStream,
+        mut socket: TcpStream,
         peer_addr: SocketAddr,
     ) -> anyhow::Result<()> {
         debug!(%peer_addr, "Got new connection");
+
+        // Check if connection limit is reached
+        {
+            let mut connections_per_ip = self.connections_per_ip.write().await;
+            let connections = connections_per_ip.entry(peer_addr.ip()).or_default();
+            if *connections >= MAX_CONNECTIONS_PER_IP {
+                socket
+                    .write_all(
+                        format!(
+                            "ERROR Connection limit of {MAX_CONNECTIONS_PER_IP} connections per IP reached\n"
+                        )
+                        .as_bytes(),
+                    )
+                    .await
+                    .context("Failed to send response to client")?;
+                socket.flush().await.context("Failed to flush socket")?;
+                socket
+                    .shutdown()
+                    .await
+                    .context("Failed to shutdown socket")?;
+
+                return Ok(());
+            }
+
+            *connections += 1;
+        }
 
         let mut framed = Framed::new(
             socket,
@@ -73,13 +112,34 @@ impl AsciiServer {
             let line = line?;
             let request = Self::parse_request_report_errors(line, &mut framed).await?;
             if let Some(request) = request {
-                let response = self.process_request(request);
+                let response = self.process_request(request).await;
                 response
                     .send_response(&mut framed)
                     .await
                     .context("Failed to send response to client")?;
             }
         }
+
+        {
+            let mut connections_per_ip = self.connections_per_ip.write().await;
+            let connections = connections_per_ip.entry(peer_addr.ip());
+            match connections {
+                Entry::Occupied(mut entry) => {
+                    let value = entry.get_mut();
+                    if *value <= 1 {
+                        entry.remove();
+                    } else {
+                        *value -= 1;
+                    }
+                }
+                Entry::Vacant(_) => warn!(
+                    ?peer_addr,
+                    ip = ?peer_addr.ip(),
+                    "Tried to decrement the number of connections, but this IP had no connection number stored"
+                ),
+            }
+        }
+        debug!(%peer_addr, "Connection closed");
 
         Ok(())
     }
@@ -96,7 +156,7 @@ impl AsciiServer {
             }
             Ok((remaining, request)) => {
                 framed
-                    .send(format!("ERROR: The request {line:?} could be parsed to {request:?}, but it had remaining bytes: {remaining:?}"))
+                    .send(format!("ERROR The request {line:?} could be parsed to {request:?}, but it had remaining bytes: {remaining:?}"))
                     .await
                     .context("Failed to send response to client")?;
 
@@ -104,7 +164,7 @@ impl AsciiServer {
             }
             Err(err) => {
                 framed
-                    .send(format!("ERROR: Invalid request {line:?}: {err:?}"))
+                    .send(format!("ERROR Invalid request {line:?}: {err:?}"))
                     .await
                     .context("Failed to send response to client")?;
 
@@ -113,7 +173,7 @@ impl AsciiServer {
         }
     }
 
-    fn process_request(&self, request: Request) -> Response {
+    async fn process_request(&self, request: Request) -> Response {
         match request {
             Request::Help => Response::Help,
             Request::Size => Response::Size {

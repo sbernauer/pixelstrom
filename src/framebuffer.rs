@@ -20,6 +20,14 @@ impl FrameBuffer {
         }
     }
 
+    // pub fn width(&self) -> u32 {
+    //     self.width
+    // }
+
+    // pub fn height(&self) -> u32 {
+    //     self.height
+    // }
+
     pub fn num_pixels(&self) -> u32 {
         self.width * self.height
     }
