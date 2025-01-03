@@ -1,13 +1,13 @@
 use std::{ops::Deref, sync::Arc, time::Duration};
 
 use anyhow::Context;
+use ascii_server::AsciiServer;
 use prost::bytes::BufMut;
 use rand::Rng;
 use tokio::{sync::broadcast::Sender, time::interval};
 
 use crate::{
     app_state::AppState,
-    ascii_server::run_ascii_server,
     http_server::run_http_server,
     proto::{web_socket_message::Payload, ClientPainting, WebSocketMessage},
 };
@@ -42,7 +42,12 @@ async fn main() -> anyhow::Result<()> {
         async move { random_client_paints_loop(width, height, web_socket_message_tx).await },
     );
 
-    tokio::spawn(async move { run_ascii_server(ascii_listener_address).await });
+    let ascii_server =
+        AsciiServer::new(shared_state.clone(), ascii_listener_address, width, height)
+            .await
+            .context("Failed to start ASCII server")?;
+    tokio::spawn(async move { ascii_server.run().await });
+
     run_http_server(shared_state, http_listener_address).await?;
 
     Ok(())
