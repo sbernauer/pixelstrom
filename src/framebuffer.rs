@@ -1,16 +1,17 @@
 use colorgrad::Gradient;
+use prost::bytes::BufMut;
 
-use crate::proto::ScreenSync;
+use crate::proto::{web_socket_message::Payload, ClientPainting, ScreenSync, WebSocketMessage};
 
 #[derive(Debug)]
 pub struct FrameBuffer {
-    width: u32,
-    height: u32,
+    width: u16,
+    height: u16,
     pixels: Vec<u32>,
 }
 
 impl FrameBuffer {
-    pub fn new(width: u32, height: u32) -> Self {
+    pub fn new(width: u16, height: u16) -> Self {
         let pixels = vec![0; width as usize * height as usize];
 
         Self {
@@ -28,8 +29,63 @@ impl FrameBuffer {
     //     self.height
     // }
 
-    pub fn num_pixels(&self) -> u32 {
-        self.width * self.height
+    #[inline(always)]
+    pub fn num_pixels(&self) -> usize {
+        self.width as usize * self.height as usize
+    }
+
+    #[inline(always)]
+    const fn index(&self, x: u16, y: u16) -> usize {
+        y as usize * self.width as usize + x as usize
+    }
+
+    /// Gets the rgba value for the given pixel if it exists
+    ///
+    /// The function returns [`None`] in case the pixel does not exist (because x or y is outside of screen)
+    #[inline(always)]
+    pub fn get(&self, x: u16, y: u16) -> Option<u32> {
+        if x < self.width && y < self.height {
+            self.pixels.get(self.index(x, y)).copied()
+        } else {
+            None
+        }
+    }
+
+    // /// Sets the rgba value for the given pixel if it exists
+    // ///
+    // /// The function does nothing in case the pixel does not exist (because x or y is outside of screen)
+    // #[inline(always)]
+    // pub fn set_no_client_update(&mut self, x: u16, y: u16, rgba: u32) {
+    //     if x < self.width && y < self.height {
+    //         let index = self.index(x, y);
+    //         self.pixels[index] = rgba;
+    //     }
+    // }
+
+    /// Sets the rgba value for the given pixel and sends a websocket update
+    ///
+    /// See [`set_no_client_update`] for other considerations, such as out of screen handling
+    #[inline(always)]
+    pub fn set_client_update(
+        &mut self,
+        x: u16,
+        y: u16,
+        rgba: u32,
+        client: String,
+    ) -> Option<WebSocketMessage> {
+        if x >= self.width || y >= self.height {
+            return None;
+        }
+        let index = self.index(x, y);
+        self.pixels[index] = rgba;
+
+        let mut painted = Vec::new();
+        painted.put_u16(x);
+        painted.put_u16(y);
+        painted.put_u32(rgba);
+        Some(WebSocketMessage {
+            payload: Some(Payload::ClientPainting(ClientPainting { client, painted })),
+        })
     }
 
     // pub fn fill_with_random_color(&mut self) {
@@ -66,8 +122,8 @@ impl From<&FrameBuffer> for ScreenSync {
             .collect();
 
         Self {
-            width: value.width,
-            height: value.height,
+            width: value.width as u32,
+            height: value.height as u32,
             pixels,
         }
     }

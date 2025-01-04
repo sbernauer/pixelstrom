@@ -30,27 +30,27 @@ const HELP_TEXT: &str = "Help text here :)";
 pub struct AsciiServer {
     listener: TcpListener,
 
-    _shared_state: Arc<AppState>,
+    shared_state: Arc<AppState>,
     user_manager: UserManager,
     connections_per_ip: Arc<RwLock<HashMap<IpAddr, usize>>>,
 
-    width: u32,
-    height: u32,
+    width: u16,
+    height: u16,
 }
 
 impl AsciiServer {
     pub async fn new(
         shared_state: Arc<AppState>,
         listener_address: &str,
-        width: u32,
-        height: u32,
+        width: u16,
+        height: u16,
     ) -> anyhow::Result<Self> {
         let listener = TcpListener::bind(listener_address).await.with_context(|| {
             format!("Failed to bind to ASCII listener address {listener_address}")
         })?;
 
         Ok(Self {
-            _shared_state: shared_state,
+            shared_state,
             user_manager: UserManager::new_from_save_file()
                 .await
                 .context("Failed to create user manager")?,
@@ -116,17 +116,24 @@ impl AsciiServer {
             LinesCodec::new_with_max_length(MAX_INPUT_LINE_LENGTH),
         );
 
+        let mut current_username = None;
         while let Some(line) = framed.next().await {
             let line = line?;
+            if line.is_empty() {
+                continue;
+            }
+
             let request = Self::parse_request_report_errors(&line, &mut framed).await?;
             if let Some(request) = request {
                 let response = self
-                    .process_request(request)
+                    .process_request(request, &mut current_username)
                     .await
                     .context("Failed to process request")?;
-                self.send_response(response, &mut framed, peer_addr.ip())
-                    .await
-                    .context("Failed to send response to client")?;
+                if let Some(response) = response {
+                    self.send_response(response, &mut framed, peer_addr.ip())
+                        .await
+                        .context("Failed to send response to client")?;
+                }
             }
         }
 
@@ -165,25 +172,59 @@ impl AsciiServer {
         }
     }
 
-    async fn process_request<'a>(&self, request: Request<'a>) -> anyhow::Result<Response> {
+    async fn process_request<'a>(
+        &self,
+        request: Request<'a>,
+        current_username: &mut Option<String>,
+    ) -> anyhow::Result<Option<Response>> {
         Ok(match request {
-            Request::Help => Response::Help,
-            Request::Size => Response::Size {
+            Request::Help => Some(Response::Help),
+            Request::Size => Some(Response::Size {
                 width: self.width,
                 height: self.height,
-            },
-            Request::Login { username, password } => {
+            }),
+            Request::Login { username, password } => Some({
                 if self
                     .user_manager
                     .check_credentials(username, password)
                     .await
                     .context(format!("Failed to check credentials of user {username}"))?
                 {
+                    *current_username = Some(username.to_owned());
                     Response::LoginSucceeded
                 } else {
+                    *current_username = None;
                     Response::LoginFailed
                 }
-            }
+            }),
+            Request::GetPixel { x, y } => self
+                .shared_state
+                .framebuffer
+                .read()
+                .await
+                .get(x, y)
+                .map(|rgba| Response::GetPixel { x, y, rgba }),
+            Request::SetPixel { x, y, rgba } => match current_username {
+                Some(current_username) => {
+                    // TODO Check rate limit and stuff
+                    let client_update = self
+                        .shared_state
+                        .framebuffer
+                        .write()
+                        .await
+                        .set_client_update(x, y, rgba, current_username.to_owned());
+
+                    if let Some(client_update) = client_update {
+                        self.shared_state
+                            .web_socket_message_tx
+                            .send(client_update)
+                            .context("Failed to send update to client")?;
+                    }
+
+                    None
+                }
+                None => Some(Response::LoginNeeded),
+            },
         })
     }
 
@@ -206,6 +247,9 @@ impl AsciiServer {
             Response::LoginFailed => {
                 close_connection = true;
                 framed.send("ERROR LOGIN FAILED").await
+            }
+            Response::GetPixel { x, y, rgba } => {
+                framed.send(format!("PX {x} {y} {rgba:06x}")).await
             }
         }
         .context("Failed to send response to client")?;

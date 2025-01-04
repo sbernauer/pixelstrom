@@ -30,17 +30,19 @@ async fn main() -> anyhow::Result<()> {
     let ascii_listener_address = "[::]:1234";
     let http_listener_address = "[::]:3000";
 
-    let (app_state, web_socket_message_tx) = AppState::new(width, height);
+    let app_state = AppState::new(width, height);
     let shared_state = Arc::new(app_state);
 
-    let shared_state_for_loop = shared_state.clone();
-    let web_socket_message_tx_for_loop = web_socket_message_tx.clone();
-    tokio::spawn(async move {
-        rainbow_loop(shared_state_for_loop, web_socket_message_tx_for_loop).await
-    });
+    let shared_state_clone = shared_state.clone();
+    let web_socket_message_tx_clone = shared_state.web_socket_message_tx.clone();
     tokio::spawn(
-        async move { random_client_paints_loop(width, height, web_socket_message_tx).await },
+        async move { rainbow_loop(shared_state_clone, web_socket_message_tx_clone).await },
     );
+
+    let web_socket_message_tx_clone = shared_state.web_socket_message_tx.clone();
+    tokio::spawn(async move {
+        random_client_paints_loop(width, height, web_socket_message_tx_clone).await
+    });
 
     let ascii_server =
         AsciiServer::new(shared_state.clone(), ascii_listener_address, width, height)
@@ -60,6 +62,7 @@ async fn rainbow_loop(
     let mut interval = interval(Duration::from_millis(2000));
     loop {
         interval.tick().await;
+
         {
             let mut fb = shared_state.framebuffer.write().await;
             fb.fill_with_rainbow();
@@ -76,15 +79,16 @@ async fn rainbow_loop(
     }
 }
 
-const SIZE: u32 = 200;
+const SIZE: u16 = 200;
 async fn random_client_paints_loop(
-    width: u32,
-    height: u32,
+    width: u16,
+    height: u16,
     web_socket_message_tx: Sender<WebSocketMessage>,
 ) -> anyhow::Result<()> {
     let mut interval = interval(Duration::from_millis(100));
     loop {
         interval.tick().await;
+
         let mut rng = rand::thread_rng();
         let color: u32 = rng.gen();
 
@@ -96,8 +100,8 @@ async fn random_client_paints_loop(
         let mut painted = Vec::new();
         for x in start_x..end_x {
             for y in start_y..end_y {
-                painted.put_u16(x as u16);
-                painted.put_u16(y as u16);
+                painted.put_u16(x);
+                painted.put_u16(y);
                 painted.put_u32(color);
             }
         }

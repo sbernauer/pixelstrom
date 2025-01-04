@@ -72,7 +72,7 @@ impl UserManager {
     /// corresponding user is created.
     pub async fn check_credentials(&self, username: &str, password: &str) -> anyhow::Result<bool> {
         if let Some(password_hash) = self.users.read().await.get(username) {
-            let password_hash = PasswordHash::new(&password_hash).context(format!(
+            let password_hash = PasswordHash::new(password_hash).context(format!(
                 "Failed to parse password hash for user {username}: {password_hash}"
             ))?;
             return Ok(Argon2::default()

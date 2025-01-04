@@ -134,7 +134,7 @@ function applyScreenSync(screenSync) {
 }
 
 function applyClientPainting(clientPainting) {
-    console.log(clientPainting.client, "painted", clientPainting.painted.length, "pixels");
+    console.log(clientPainting.client, "painted", clientPainting.painted.length / 8, "pixels");
 
     const painted = new Uint8Array(clientPainting.painted);
     console.log("Got", painted.length, "pixel updates");
@@ -152,9 +152,9 @@ function applyClientPainting(clientPainting) {
         const y = (painted[byte + 2] << 8) + painted[byte + 3];
         const index = 4 * (y * width + x);
 
-        imageData.data[index + 0] = painted[byte + 4]; // Red
-        imageData.data[index + 1] = painted[byte + 5]; // Green
-        imageData.data[index + 2] = painted[byte + 6]; // Blue
+        imageData.data[index + 0] = painted[byte + 5]; // Red
+        imageData.data[index + 1] = painted[byte + 6]; // Green
+        imageData.data[index + 2] = painted[byte + 7]; // Blue
         imageData.data[index + 3] = 255; // Alpha
     }
 
