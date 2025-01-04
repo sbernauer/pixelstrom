@@ -7,7 +7,10 @@ use axum::{
     Router,
 };
 use tokio::net::TcpListener;
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::{
+    cors::CorsLayer,
+    services::{ServeDir, ServeFile},
+};
 use tracing::info;
 
 use crate::{
@@ -49,5 +52,7 @@ fn build_router(shared_state: Arc<AppState>) -> Router {
         )
         .route("/api/current-screen", get(get_current_screen))
         .nest_service("/static", get_service(ServeDir::new("./web/static")))
+        // TODO: Try to restrict
+        .layer(CorsLayer::permissive())
         .with_state(shared_state)
 }
