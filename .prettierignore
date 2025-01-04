@@ -1,0 +1,7 @@
+# dunno, maybe we want to format helm charts anytime in the future?
+charts
+
+target
+
+node
+node_modules
