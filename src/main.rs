@@ -4,11 +4,11 @@ use anyhow::Context;
 use ascii_server::AsciiServer;
 use prost::bytes::BufMut;
 use rand::Rng;
-use tokio::{sync::broadcast::Sender, time::interval};
+use tokio::{sync::mpsc, time::interval};
 
 use crate::{
     app_state::AppState,
-    http_server::run_http_server,
+    http_server::{run_http_server, websocket::start_websocket_compressor_loop},
     proto::{web_socket_message::Payload, ClientPainting, WebSocketMessage},
 };
 
@@ -30,19 +30,21 @@ async fn main() -> anyhow::Result<()> {
     let ascii_listener_address = "[::]:1234";
     let http_listener_address = "[::]:3000";
 
-    let app_state = AppState::new(width, height);
+    // This only buffers between the server and the compression loop
+    // There is a separate broadcast channel between the compression loop and individual websockets
+    let (ws_message_tx, ws_message_rx) = mpsc::channel(32);
+    let compressed_ws_message_rx = start_websocket_compressor_loop(ws_message_rx).await;
+
+    let app_state = AppState::new(width, height, ws_message_tx, compressed_ws_message_rx);
     let shared_state = Arc::new(app_state);
 
     let shared_state_clone = shared_state.clone();
-    let web_socket_message_tx_clone = shared_state.web_socket_message_tx.clone();
-    tokio::spawn(
-        async move { rainbow_loop(shared_state_clone, web_socket_message_tx_clone).await },
-    );
+    tokio::spawn(async move { rainbow_loop(shared_state_clone).await });
 
-    let web_socket_message_tx_clone = shared_state.web_socket_message_tx.clone();
-    tokio::spawn(async move {
-        random_client_paints_loop(width, height, web_socket_message_tx_clone).await
-    });
+    let ws_message_tx_clone = shared_state.ws_message_tx.clone();
+    tokio::spawn(
+        async move { random_client_paints_loop(width, height, ws_message_tx_clone).await },
+    );
 
     let ascii_server =
         AsciiServer::new(shared_state.clone(), ascii_listener_address, width, height)
@@ -55,10 +57,9 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn rainbow_loop(
-    shared_state: Arc<AppState>,
-    web_socket_message_tx: Sender<WebSocketMessage>,
-) -> anyhow::Result<()> {
+async fn rainbow_loop(shared_state: Arc<AppState>) -> anyhow::Result<()> {
+    let tx = &shared_state.ws_message_tx;
+
     let mut interval = interval(Duration::from_millis(2000));
     loop {
         interval.tick().await;
@@ -71,11 +72,11 @@ async fn rainbow_loop(
         let fb = shared_state.framebuffer.read().await;
         let screen_sync: proto::ScreenSync = fb.deref().into();
 
-        web_socket_message_tx
-            .send(WebSocketMessage {
-                payload: Some(Payload::ScreenSync(screen_sync)),
-            })
-            .context("Failed to send ScreenSync to channel")?;
+        tx.send(WebSocketMessage {
+            payload: Some(Payload::ScreenSync(screen_sync)),
+        })
+        .await
+        .context("Failed to send update to websocket message channel")?;
     }
 }
 
@@ -83,17 +84,17 @@ const SIZE: u16 = 300;
 async fn random_client_paints_loop(
     width: u16,
     height: u16,
-    web_socket_message_tx: Sender<WebSocketMessage>,
+    ws_message_tx: mpsc::Sender<WebSocketMessage>,
 ) -> anyhow::Result<()> {
     let mut interval = interval(Duration::from_millis(50));
     loop {
         interval.tick().await;
 
-        let mut rng = rand::thread_rng();
-        let color: u32 = rng.gen();
+        // For some `Send` reasons I'm unable to re-use `rand::thread_rng()`
+        let color: u32 = rand::thread_rng().gen();
+        let start_x = rand::thread_rng().gen_range(0..width.saturating_sub(SIZE));
+        let start_y = rand::thread_rng().gen_range(0..height.saturating_sub(SIZE));
 
-        let start_x = rng.gen_range(0..width.saturating_sub(SIZE));
-        let start_y = rng.gen_range(0..height.saturating_sub(SIZE));
         let end_x = start_x + SIZE;
         let end_y = start_y + SIZE;
 
@@ -113,8 +114,9 @@ async fn random_client_paints_loop(
             })),
         };
 
-        web_socket_message_tx
+        ws_message_tx
             .send(ws_message)
-            .context("Failed to send ClientPainting to channel")?;
+            .await
+            .context("Failed to send update to websocket message channel")?;
     }
 }

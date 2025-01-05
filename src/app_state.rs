@@ -1,7 +1,4 @@
-use tokio::sync::{
-    broadcast::{self, Receiver, Sender},
-    RwLock,
-};
+use tokio::sync::{broadcast, mpsc, RwLock};
 
 use crate::{framebuffer::FrameBuffer, proto::WebSocketMessage};
 
@@ -9,23 +6,24 @@ use crate::{framebuffer::FrameBuffer, proto::WebSocketMessage};
 pub struct AppState {
     pub framebuffer: RwLock<FrameBuffer>,
 
-    pub web_socket_message_tx: Sender<WebSocketMessage>,
-    pub web_socket_message_rx: Receiver<WebSocketMessage>,
+    pub ws_message_tx: mpsc::Sender<WebSocketMessage>,
+    // TODO: Can we avoid cloning the [`Vec`] for every websocket connection?
+    // Maybe have an Arc here?
+    // See https://www.reddit.com/r/rust/comments/ms8yjz/how_to_send_a_slice_through_a_channel_confused/
+    pub compressed_ws_message_tx: broadcast::Receiver<Vec<u8>>,
 }
 
 impl AppState {
-    pub fn new(width: u16, height: u16) -> Self {
-        let (web_socket_message_tx, web_socket_message_rx) = broadcast::channel(
-            // Please note that this number is a trade-off:
-            // To small capacity can cause websockets to fall behind and miss messages (we will log warnings in this case)
-            // To high capacity can cause very high memory usage in case websocket clients fall behind
-            1024,
-        );
-
+    pub fn new(
+        width: u16,
+        height: u16,
+        ws_message_tx: mpsc::Sender<WebSocketMessage>,
+        compressed_ws_message_tx: broadcast::Receiver<Vec<u8>>,
+    ) -> Self {
         Self {
             framebuffer: RwLock::new(FrameBuffer::new(width, height)),
-            web_socket_message_tx,
-            web_socket_message_rx,
+            ws_message_tx,
+            compressed_ws_message_tx,
         }
     }
 }

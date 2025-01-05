@@ -216,9 +216,10 @@ impl AsciiServer {
 
                     if let Some(client_update) = client_update {
                         self.shared_state
-                            .web_socket_message_tx
+                            .ws_message_tx
                             .send(client_update)
-                            .context("Failed to send update to client")?;
+                            .await
+                            .context("Failed to send update to websocket message channel")?;
                     }
 
                     None

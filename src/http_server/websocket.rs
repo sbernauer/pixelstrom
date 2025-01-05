@@ -5,23 +5,26 @@ use axum::extract::{
     State,
 };
 use prost::Message as _;
-use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::{
+    broadcast::{self, error::RecvError},
+    mpsc,
+};
 use tracing::{error, info, trace, warn};
 use zstd::DEFAULT_COMPRESSION_LEVEL;
 
-use crate::app_state::AppState;
+use crate::{app_state::AppState, proto::WebSocketMessage};
 
 const ZSTD_COMPRESSION_LEVEL: i32 = DEFAULT_COMPRESSION_LEVEL;
 
 pub async fn handle_websocket(mut ws: WebSocket, state: State<Arc<AppState>>) {
     info!("Websocket connected");
 
-    let mut rx = state.web_socket_message_rx.resubscribe();
+    let mut rx = state.compressed_ws_message_tx.resubscribe();
 
     loop {
-        let web_socket_message = rx.recv().await;
-        let web_socket_message = match web_socket_message {
-            Ok(web_socket_message) => web_socket_message,
+        let compressed_ws_message = rx.recv().await;
+        let compressed_ws_message = match compressed_ws_message {
+            Ok(compressed_ws_message) => compressed_ws_message,
             Err(RecvError::Closed) => {
                 // Server is shutting down
                 break;
@@ -32,35 +35,70 @@ pub async fn handle_websocket(mut ws: WebSocket, state: State<Arc<AppState>>) {
             }
         };
 
-        // TODO: Ideally we only compress the message once and not individually for every websocket!
-        let uncompressed_bytes = web_socket_message.encode_to_vec();
-        let compressed_bytes =
-            match zstd::encode_all(uncompressed_bytes.as_slice(), ZSTD_COMPRESSION_LEVEL) {
-                Ok(compressed) => compressed,
-                Err(err) => {
+        if let Err(err) = ws.send(Message::binary(compressed_ws_message)).await {
+            error!(%err, "Failed to send compressed websocket message to websocket, closing websocket");
+            break;
+        }
+    }
+
+    info!("Websocket closed");
+}
+
+pub async fn start_websocket_compressor_loop(
+    mut ws_message_rx: mpsc::Receiver<WebSocketMessage>,
+) -> broadcast::Receiver<Vec<u8>> {
+    let (compressed_ws_message_tx, compressed_ws_message_rx) = broadcast::channel(
+        // Please note that this number is a trade-off:
+        // To small capacity can cause websockets to fall behind and miss messages (we will log warnings in this case)
+        // To high capacity can cause very high memory usage in case websocket clients fall behind
+        512,
+    );
+
+    tokio::spawn(async move {
+        while let Some(ws_message) = ws_message_rx.recv().await {
+            let compressed_bytes = tokio::task::spawn_blocking(move || {
+                let uncompressed_bytes = ws_message.encode_to_vec();
+
+                let compressed_bytes =
+                    zstd::encode_all(uncompressed_bytes.as_slice(), ZSTD_COMPRESSION_LEVEL)?;
+
+                Ok::<_, std::io::Error>((compressed_bytes, uncompressed_bytes.len()))
+            })
+            .await;
+
+            let (compressed_bytes, uncompressed_bytes_len) = match compressed_bytes {
+                Ok(Ok(compressed_bytes)) => compressed_bytes,
+                Ok(Err(err)) => {
                     error!(
                         %err,
                         "Failed to compress websocket message using zstd compression"
                     );
                     continue;
                 }
+                Err(err) => {
+                    error!(
+                        %err,
+                        "Failed to join task that compresses websocket message using zstd compression"
+                    );
+                    continue;
+                }
             };
 
-        trace!(
-            compressed_bytes = compressed_bytes.len(),
-            uncompressed_bytes = uncompressed_bytes.len(),
-            compression_ratio = uncompressed_bytes.len() / compressed_bytes.len(),
-            "Sending websocket message"
-        );
+            trace!(
+                compression_ratio = uncompressed_bytes_len / compressed_bytes.len(),
+                compressed_bytes = compressed_bytes.len(),
+                uncompressed_bytes = uncompressed_bytes_len,
+                "Compressed websocket message"
+            );
 
-        if ws
-            .send(Message::Binary(compressed_bytes.into()))
-            .await
-            .is_err()
-        {
-            break;
+            if let Err(err) = compressed_ws_message_tx.send(compressed_bytes) {
+                error!(
+                    %err,
+                    "Failed to send compressed websocket message to channel"
+                );
+            }
         }
-    }
+    });
 
-    info!("Websocket closed");
+    compressed_ws_message_rx
 }

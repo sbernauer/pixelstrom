@@ -19,7 +19,7 @@ use crate::{
 };
 
 mod current_screen;
-mod websocket;
+pub mod websocket;
 
 pub async fn run_http_server(
     shared_state: Arc<AppState>,
