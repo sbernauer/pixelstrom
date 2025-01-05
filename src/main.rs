@@ -79,13 +79,13 @@ async fn rainbow_loop(
     }
 }
 
-const SIZE: u16 = 200;
+const SIZE: u16 = 300;
 async fn random_client_paints_loop(
     width: u16,
     height: u16,
     web_socket_message_tx: Sender<WebSocketMessage>,
 ) -> anyhow::Result<()> {
-    let mut interval = interval(Duration::from_millis(100));
+    let mut interval = interval(Duration::from_millis(50));
     loop {
         interval.tick().await;
 
