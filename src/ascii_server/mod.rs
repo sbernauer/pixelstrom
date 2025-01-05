@@ -85,32 +85,13 @@ impl AsciiServer {
     ) -> anyhow::Result<()> {
         debug!(%peer_addr, "Got new connection");
 
-        // Check if connection limit is reached
+        if !self
+            .check_and_increment_connection_limit(peer_addr.ip(), &mut socket)
+            .await
+            .context("Failed to check and increment connection limit")?
         {
-            let mut connections_per_ip = self.connections_per_ip.write().await;
-            let connections = connections_per_ip.entry(peer_addr.ip()).or_default();
-            if *connections >= MAX_CONNECTIONS_PER_IP {
-                socket
-                    .write_all(
-                        format!(
-                            "ERROR Connection limit of {MAX_CONNECTIONS_PER_IP} connections per IP reached\n"
-                        )
-                        .as_bytes(),
-                    )
-                    .await
-                    .context("Failed to send response to client")?;
-                socket.flush().await.context("Failed to flush socket")?;
-                socket
-                    .shutdown()
-                    .await
-                    .context("Failed to shutdown socket")?;
-
-                return Ok(());
-            }
-
-            *connections += 1;
+            return Ok(());
         }
-
         let mut framed = Framed::new(
             socket,
             LinesCodec::new_with_max_length(MAX_INPUT_LINE_LENGTH),
@@ -141,6 +122,37 @@ impl AsciiServer {
         debug!(%peer_addr, "Connection closed");
 
         Ok(())
+    }
+
+    /// Checks if this IP has reached the connection limit, if not increments the connection counter
+    async fn check_and_increment_connection_limit(
+        &self,
+        peer_ip: IpAddr,
+        socket: &mut TcpStream,
+    ) -> anyhow::Result<bool> {
+        let mut connections_per_ip = self.connections_per_ip.write().await;
+        let connections = connections_per_ip.entry(peer_ip).or_default();
+        if *connections >= MAX_CONNECTIONS_PER_IP {
+            socket
+                .write_all(
+                    format!(
+                        "ERROR Connection limit of {MAX_CONNECTIONS_PER_IP} connections per IP reached\n"
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .context("Failed to send response to client")?;
+            socket.flush().await.context("Failed to flush socket")?;
+            socket
+                .shutdown()
+                .await
+                .context("Failed to shutdown socket")?;
+
+            return Ok(false);
+        }
+
+        *connections += 1;
+        Ok(true)
     }
 
     async fn parse_request_report_errors<'a>(
