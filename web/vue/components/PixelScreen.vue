@@ -52,15 +52,22 @@ window.onload = () => {
   ZstdCodec.run((zstd) => {
     streamingDecoder = new zstd.Streaming();
   });
-  console.log("Created streaming zstd decompressor");
+  console.log('Created streaming zstd decompressor');
 
   socket.onmessage = async (event) => {
     received_counter++;
     const compressed = new Uint8Array(await event.data.arrayBuffer());
 
-    console.log("Got compressed message with", compressed.length, "bytes",
-      "Received:", received_counter, "Processed:", processed_counter,
-      "Lag:", received_counter - processed_counter
+    console.log(
+      'Got compressed message with',
+      compressed.length,
+      'bytes',
+      'Received:',
+      received_counter,
+      'Processed:',
+      processed_counter,
+      'Lag:',
+      received_counter - processed_counter,
     );
 
     const decompressed = streamingDecoder.decompress(compressed);
@@ -87,7 +94,7 @@ window.onload = () => {
   };
 
   // fetch('http://localhost:3000/api/current-screen')
-  fetch(window.location.protocol + "//" + window.location.hostname + ":3000/api/current-screen")
+  fetch(window.location.protocol + '//' + window.location.hostname + ':3000/api/current-screen')
     .then((response) => {
       if (!response.ok) {
         throw new Error('Network response was not ok');
