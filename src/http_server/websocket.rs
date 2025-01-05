@@ -32,6 +32,7 @@ pub async fn handle_websocket(mut ws: WebSocket, state: State<Arc<AppState>>) {
             }
         };
 
+        // TODO: Ideally we only compress the message once and not individually for every websocket!
         let uncompressed_bytes = web_socket_message.encode_to_vec();
         let compressed_bytes =
             match zstd::encode_all(uncompressed_bytes.as_slice(), ZSTD_COMPRESSION_LEVEL) {

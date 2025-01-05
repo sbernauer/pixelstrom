@@ -45,20 +45,33 @@ window.onload = () => {
   // Create a WebSocket connection to the server
   const socket = new WebSocket('ws://localhost:3000/ws');
 
-  socket.onmessage = async (event) => {
-    const compressed = new Uint8Array(await event.data.arrayBuffer());
-    ZstdCodec.run((zstd) => {
-      const streaming = new zstd.Streaming();
+  var received_counter = 0;
+  var processed_counter = 0;
 
-      const decompressed = streaming.decompress(compressed);
-      console.log('compressed', compressed, 'decompressed', decompressed);
-      try {
-        const webSocketMessage = WebSocketMessage.decode(decompressed);
-        applyWebSocketMessage(webSocketMessage);
-      } catch (e) {
-        console.error('Error decoding webSocketMessage:', e);
-      }
-    });
+  var streamingDecoder;
+  ZstdCodec.run((zstd) => {
+    streamingDecoder = new zstd.Streaming();
+  });
+  console.log("Created streaming zstd decompressor");
+
+  socket.onmessage = async (event) => {
+    received_counter++;
+    const compressed = new Uint8Array(await event.data.arrayBuffer());
+
+    console.log("Got compressed message with", compressed.length, "bytes",
+      "Received:", received_counter, "Processed:", processed_counter,
+      "Lag:", received_counter - processed_counter
+    );
+
+    const decompressed = streamingDecoder.decompress(compressed);
+    try {
+      const webSocketMessage = WebSocketMessage.decode(decompressed);
+      applyWebSocketMessage(webSocketMessage);
+    } catch (e) {
+      console.error('Error decoding webSocketMessage:', e);
+    }
+
+    processed_counter++;
   };
 
   socket.onerror = (error) => {
@@ -73,7 +86,8 @@ window.onload = () => {
     console.log('WebSocket connection closed');
   };
 
-  fetch('http://localhost:3000/api/current-screen')
+  // fetch('http://localhost:3000/api/current-screen')
+  fetch(window.location.protocol + "//" + window.location.hostname + ":3000/api/current-screen")
     .then((response) => {
       if (!response.ok) {
         throw new Error('Network response was not ok');
@@ -91,7 +105,7 @@ window.onload = () => {
       applyScreenSync(screenSync);
     })
     .catch((error) => {
-      console.error('Error:', error);
+      console.error('Error fetching initial screen sync:', error);
     });
 };
 
@@ -127,10 +141,8 @@ function applyScreenSync(screenSync) {
 }
 
 function applyClientPainting(clientPainting) {
-  console.log(clientPainting.client, 'painted', clientPainting.painted.length / 8, 'pixels');
-
+  // console.log(clientPainting.client, 'painted', clientPainting.painted.length / 8, 'pixels');
   const painted = new Uint8Array(clientPainting.painted);
-  console.log('Got', painted.length, 'pixel updates');
 
   const screen = document.getElementById('screen');
   const ctx = screen.getContext('2d');
@@ -155,7 +167,7 @@ function applyClientPainting(clientPainting) {
 }
 
 function applyWebSocketMessage(webSocketMessage) {
-  console.log('Got WebSocketMessage', webSocketMessage, 'with payload', webSocketMessage.payload);
+  // console.log('Got WebSocketMessage', webSocketMessage, 'with payload', webSocketMessage.payload);
   switch (webSocketMessage.payload) {
     case 'screenSync':
       applyScreenSync(webSocketMessage.screenSync);
