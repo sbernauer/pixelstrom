@@ -66,10 +66,14 @@ impl<'a> AsciiServer<'a> {
         mut socket: TcpStream,
         peer_addr: SocketAddr,
     ) -> anyhow::Result<()> {
-        debug!(%peer_addr, "Got new connection");
+        // If you connect via IPv4 you often show up as embedded inside an IPv6 address
+        // Extracting the embedded information here, so we get the real (TM) address
+        let peer_ip = peer_addr.ip().to_canonical();
+
+        debug!(%peer_ip, %peer_addr, "Got new connection");
 
         if !self
-            .check_and_increment_connection_limit(peer_addr.ip(), &mut socket)
+            .check_and_increment_connection_limit(peer_ip, &mut socket)
             .await
             .context("Failed to check and increment connection limit")?
         {
@@ -98,8 +102,8 @@ impl<'a> AsciiServer<'a> {
             .await
             .context("Failed to shut down connection")?;
 
-        self.dec_connections(peer_addr.ip()).await;
-        debug!(%peer_addr, "Connection closed");
+        self.dec_connections(peer_ip).await;
+        debug!(%peer_ip, %peer_addr, "Connection closed");
 
         Ok(())
     }
