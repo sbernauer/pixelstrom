@@ -19,7 +19,7 @@ mod client_connection;
 mod parser;
 mod user_manager;
 
-const MAX_INPUT_LINE_LENGTH: usize = 1024;
+const MAX_INPUT_LINE_LENGTH: usize = 128;
 const MAX_CONNECTIONS_PER_IP: usize = 2;
 
 const HELP_TEXT: &str = "Help text here :)";

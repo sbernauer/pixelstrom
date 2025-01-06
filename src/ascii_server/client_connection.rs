@@ -2,7 +2,7 @@ use anyhow::Context;
 use futures::{SinkExt, StreamExt};
 use nom::Finish;
 use tokio::{net::TcpStream, sync::mpsc};
-use tokio_util::codec::{Framed, LinesCodec};
+use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
 use tracing::trace;
 
 use crate::app_state::AppState;
@@ -51,7 +51,17 @@ impl<'a> ClientConnection<'a> {
 
         let mut current_username = None;
         while let Some(line) = framed.next().await {
-            let line = line?;
+            let line = match line {
+                Ok(line) => line,
+                Err(LinesCodecError::MaxLineLengthExceeded) => {
+                    framed
+                        .send(format!("ERROR The request line was too long. You can send at a maximum {MAX_INPUT_LINE_LENGTH} characters before you need to send a newline"))
+                        .await
+                        .context("Failed to send response to client")?;
+                    break;
+                }
+                Err(err) => Err(err).context("Failed to read next line from framed LinesCodec")?,
+            };
             if line.is_empty() {
                 continue;
             }
