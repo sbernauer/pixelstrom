@@ -36,7 +36,10 @@ pub async fn handle_websocket(mut ws: WebSocket, state: State<Arc<AppState>>) {
         };
 
         if let Err(err) = ws.send(Message::binary(compressed_ws_message)).await {
-            error!(%err, "Failed to send compressed websocket message to websocket, closing websocket");
+            error!(
+                error = &err as &dyn std::error::Error,
+                "Failed to send compressed websocket message to websocket, closing websocket"
+            );
             break;
         }
     }
@@ -70,14 +73,14 @@ pub async fn start_websocket_compressor_loop(
                 Ok(Ok(compressed_bytes)) => compressed_bytes,
                 Ok(Err(err)) => {
                     error!(
-                        %err,
+                        error = &err as &dyn std::error::Error,
                         "Failed to compress websocket message using zstd compression"
                     );
                     continue;
                 }
                 Err(err) => {
                     error!(
-                        %err,
+                        error = &err as &dyn std::error::Error,
                         "Failed to join task that compresses websocket message using zstd compression"
                     );
                     continue;
@@ -93,7 +96,7 @@ pub async fn start_websocket_compressor_loop(
 
             if let Err(err) = compressed_ws_message_tx.send(compressed_bytes) {
                 error!(
-                    %err,
+                    error = &err as &dyn std::error::Error,
                     "Failed to send compressed websocket message to channel"
                 );
             }
