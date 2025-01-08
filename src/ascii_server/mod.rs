@@ -84,7 +84,7 @@ impl<'a> AsciiServer<'a> {
         let (_, slot_start) = mpsc::channel(1);
         let (_, slot_end) = mpsc::channel(1);
 
-        let client_connection = ClientConnection::new(
+        let mut client_connection = ClientConnection::new(
             &self.user_manager,
             &self.shared_state,
             slot_start,

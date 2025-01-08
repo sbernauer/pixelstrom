@@ -5,7 +5,7 @@ use tokio::{net::TcpStream, sync::mpsc};
 use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
 use tracing::trace;
 
-use crate::app_state::AppState;
+use crate::{app_state::AppState, framebuffer::PixelUpdate};
 
 use super::{
     parser::{parse_request, Request, Response},
@@ -19,6 +19,7 @@ pub struct ClientConnection<'a> {
 
     _slot_start: mpsc::Receiver<()>,
     _slot_end: mpsc::Receiver<()>,
+    painted: Vec<PixelUpdate>,
 
     width: u16,
     height: u16,
@@ -38,12 +39,13 @@ impl<'a> ClientConnection<'a> {
             shared_state,
             _slot_start: slot_start,
             _slot_end: slot_end,
+            painted: Default::default(),
             width,
             height,
         }
     }
 
-    pub async fn run(&self, socket: &mut TcpStream) -> anyhow::Result<()> {
+    pub async fn run(&mut self, socket: &mut TcpStream) -> anyhow::Result<()> {
         let mut framed = Framed::new(
             socket,
             LinesCodec::new_with_max_length(MAX_INPUT_LINE_LENGTH),
@@ -117,7 +119,7 @@ impl<'a> ClientConnection<'a> {
     }
 
     async fn process_request<'request>(
-        &self,
+        &mut self,
         request: Request<'request>,
         current_username: &mut Option<String>,
     ) -> anyhow::Result<Option<Response>> {
@@ -149,27 +151,29 @@ impl<'a> ClientConnection<'a> {
                 .get(x, y)
                 .map(|rgba| Response::GetPixel { x, y, rgba }),
             Request::SetPixel { x, y, rgba } => match current_username {
-                Some(current_username) => {
+                Some(_current_username) => {
                     // TODO Check rate limit and stuff
-                    let client_update = self
-                        .shared_state
-                        .framebuffer
-                        .write()
-                        .await
-                        .set_client_update(x, y, rgba, current_username.to_owned());
-
-                    if let Some(client_update) = client_update {
-                        self.shared_state
-                            .ws_message_tx
-                            .send(client_update)
-                            .await
-                            .context("Failed to send update to websocket message channel")?;
-                    }
-
+                    self.painted.push(PixelUpdate { x, y, rgba });
                     None
                 }
                 None => Some(Response::LoginNeeded),
             },
+            Request::Done => {
+                let num_pixels = self.painted.len();
+                let ws_update = self.shared_state.framebuffer.write().await.set_multi(
+                    current_username
+                        .as_ref()
+                        .context("The current username is not know. This should never happen!")?,
+                    &self.painted,
+                );
+                self.shared_state
+                    .ws_message_tx
+                    .send(ws_update)
+                    .await
+                    .context("Failed to send update to websocket message channel")?;
+
+                Some(Response::Done { num_pixels })
+            }
         })
     }
 
@@ -195,6 +199,7 @@ impl<'a> ClientConnection<'a> {
             Response::GetPixel { x, y, rgba } => {
                 framed.send(format!("PX {x} {y} {rgba:06x}")).await
             }
+            Response::Done { num_pixels } => framed.send(format!("DONE {num_pixels}")).await,
         }
         .context("Failed to send response to client")?;
 

@@ -28,6 +28,7 @@ pub enum Request<'a> {
         y: u16,
         rgba: u32,
     },
+    Done,
 }
 
 #[derive(Debug)]
@@ -39,11 +40,18 @@ pub enum Response {
     LoginSucceeded,
     LoginFailed,
     GetPixel { x: u16, y: u16, rgba: u32 },
+    Done { num_pixels: usize },
 }
 
 pub fn parse_request(i: &str) -> IResult<&str, Request> {
     // Trying to sort descending by number of occurrences for performance reasons
-    alt((parse_get_or_set_pixel, parse_size, parse_login, parse_help))(i)
+    alt((
+        parse_get_or_set_pixel,
+        parse_done,
+        parse_size,
+        parse_login,
+        parse_help,
+    ))(i)
 }
 
 fn parse_help(i: &str) -> IResult<&str, Request> {
@@ -52,6 +60,10 @@ fn parse_help(i: &str) -> IResult<&str, Request> {
 
 fn parse_size(i: &str) -> IResult<&str, Request> {
     map(tag("SIZE"), |_| Request::Size)(i)
+}
+
+fn parse_done(i: &str) -> IResult<&str, Request> {
+    map(tag("DONE"), |_| Request::Done)(i)
 }
 
 fn parse_login(i: &str) -> IResult<&str, Request> {

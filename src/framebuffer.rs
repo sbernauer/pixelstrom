@@ -3,11 +3,16 @@ use prost::bytes::BufMut;
 
 use crate::proto::{web_socket_message::Payload, ClientPainting, ScreenSync, WebSocketMessage};
 
-#[derive(Debug)]
 pub struct FrameBuffer {
     width: u16,
     height: u16,
     pixels: Vec<u32>,
+}
+
+pub struct PixelUpdate {
+    pub x: u16,
+    pub y: u16,
+    pub rgba: u32,
 }
 
 impl FrameBuffer {
@@ -51,41 +56,27 @@ impl FrameBuffer {
         }
     }
 
-    // /// Sets the rgba value for the given pixel if it exists
-    // ///
-    // /// The function does nothing in case the pixel does not exist (because x or y is outside of screen)
-    // #[inline(always)]
-    // pub fn set_no_client_update(&mut self, x: u16, y: u16, rgba: u32) {
-    //     if x < self.width && y < self.height {
-    //         let index = self.index(x, y);
-    //         self.pixels[index] = rgba;
-    //     }
-    // }
-
-    /// Sets the rgba value for the given pixel and sends a websocket update
-    ///
-    /// See [`set_no_client_update`] for other considerations, such as out of screen handling
     #[inline(always)]
-    pub fn set_client_update(
+    pub fn set_multi(
         &mut self,
-        x: u16,
-        y: u16,
-        rgba: u32,
-        client: String,
-    ) -> Option<WebSocketMessage> {
-        if x >= self.width || y >= self.height {
-            return None;
+        client: impl Into<String>,
+        painted: &[PixelUpdate],
+    ) -> WebSocketMessage {
+        let mut painted_bytes = Vec::with_capacity(painted.len() * 8 /* bytes per pixel */);
+        for PixelUpdate { x, y, rgba } in painted {
+            let index = self.index(*x, *y);
+            self.pixels[index] = *rgba;
+            painted_bytes.put_u16(*x);
+            painted_bytes.put_u16(*y);
+            painted_bytes.put_u32(*rgba);
         }
-        let index = self.index(x, y);
-        self.pixels[index] = rgba;
 
-        let mut painted = Vec::new();
-        painted.put_u16(x);
-        painted.put_u16(y);
-        painted.put_u32(rgba);
-        Some(WebSocketMessage {
-            payload: Some(Payload::ClientPainting(ClientPainting { client, painted })),
-        })
+        WebSocketMessage {
+            payload: Some(Payload::ClientPainting(ClientPainting {
+                client: client.into(),
+                painted: painted_bytes,
+            })),
+        }
     }
 
     // pub fn fill_with_random_color(&mut self) {

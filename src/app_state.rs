@@ -2,7 +2,6 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 
 use crate::{framebuffer::FrameBuffer, proto::WebSocketMessage};
 
-#[derive(Debug)]
 pub struct AppState {
     pub framebuffer: RwLock<FrameBuffer>,
 
