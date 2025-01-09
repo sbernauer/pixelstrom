@@ -87,11 +87,10 @@ pub async fn start_websocket_compressor_loop(
     tokio::spawn(async move {
         while let Some(ws_message) = ws_message_rx.recv().await {
             // As the compression can take a while we put it on the blocking threadpool
-            // TODO: Use tracing to inspect actual runtime of the command
             let compressed_bytes =
                 tokio::task::spawn_blocking(move || compress_message(&ws_message)).await;
 
-            let (compressed_bytes, uncompressed_bytes_len) = match compressed_bytes {
+            let compressed_bytes = match compressed_bytes {
                 Ok(Ok(compressed_bytes)) => compressed_bytes,
                 Ok(Err(err)) => {
                     error!(
@@ -109,13 +108,6 @@ pub async fn start_websocket_compressor_loop(
                 }
             };
 
-            trace!(
-                compression_ratio = uncompressed_bytes_len / compressed_bytes.len(),
-                compressed_bytes = compressed_bytes.len(),
-                uncompressed_bytes = uncompressed_bytes_len,
-                "Compressed websocket message"
-            );
-
             if let Err(err) = compressed_ws_message_tx.send(compressed_bytes) {
                 error!(
                     error = &err as &dyn std::error::Error,
@@ -130,8 +122,12 @@ pub async fn start_websocket_compressor_loop(
 
 /// Return the compressed bytes as well as the number of uncompressed bytes
 #[instrument(skip(ws_message))] // ws_message can be pretty big
-fn compress_message(ws_message: &WebSocketMessage) -> anyhow::Result<(Vec<u8>, usize)> {
+fn compress_message(ws_message: &WebSocketMessage) -> anyhow::Result<Vec<u8>> {
+    let start = tokio::time::Instant::now();
     let uncompressed_bytes = ws_message.encode_to_vec();
+    let encoding_duration = start.elapsed();
+
+    let start = tokio::time::Instant::now();
     let compressed_bytes = zstd::encode_all(uncompressed_bytes.as_slice(), ZSTD_COMPRESSION_LEVEL)
         .with_context(|| {
             format!(
@@ -139,8 +135,18 @@ fn compress_message(ws_message: &WebSocketMessage) -> anyhow::Result<(Vec<u8>, u
                 uncompressed_bytes.len()
             )
         })?;
+    let compression_duration = start.elapsed();
 
-    Ok((compressed_bytes, uncompressed_bytes.len()))
+    trace!(
+        compression_ratio = uncompressed_bytes.len() / compressed_bytes.len(),
+        compressed_bytes = compressed_bytes.len(),
+        uncompressed_bytes = uncompressed_bytes.len(),
+        ?encoding_duration,
+        ?compression_duration,
+        "Compressed websocket message"
+    );
+
+    Ok(compressed_bytes)
 }
 
 fn web_socket_closed_because_of_lag_message(lag: u64) -> anyhow::Result<Vec<u8>> {
@@ -150,5 +156,5 @@ fn web_socket_closed_because_of_lag_message(lag: u64) -> anyhow::Result<Vec<u8>>
         )),
     };
 
-    Ok(compress_message(&ws_message)?.0)
+    compress_message(&ws_message)
 }
