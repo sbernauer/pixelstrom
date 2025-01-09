@@ -10,9 +10,16 @@ package pixelstrom;
 // Root message for WebSocket communication
 message WebSocketMessage {
   oneof payload {
-    ScreenSync screen_sync = 1;
-    ClientPainting client_painting = 2;
+    WebSocketClosedBecauseOfLag web_socket_closed_because_of_lag = 1;
+    ScreenSync screen_sync = 2;
+    ClientPainting client_painting = 3;
   }
+}
+
+// The websocket connection lagged behind to much, so it was closed.
+// This can happen because of a too slow network connection or imperforate browser.
+message WebSocketClosedBecauseOfLag {
+    uint64 lag = 1;
 }
 
 // Entire contents of the screen
@@ -176,6 +183,9 @@ function applyClientPainting(clientPainting) {
 function applyWebSocketMessage(webSocketMessage) {
   // console.log('Got WebSocketMessage', webSocketMessage, 'with payload', webSocketMessage.payload);
   switch (webSocketMessage.payload) {
+    case 'webSocketClosedBecauseOfLag':
+      alert("Your websocket connection had too much lag, it was closed. Either your network or your browser is too slow and could not handle the pixelstrom :P. Note to myself: Make a nice error box for this");
+      break;
     case 'screenSync':
       applyScreenSync(webSocketMessage.screenSync);
       break;
