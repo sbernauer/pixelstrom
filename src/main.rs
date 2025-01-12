@@ -29,6 +29,8 @@ async fn main() -> anyhow::Result<()> {
     let height = 1080;
     let ascii_listener_address = "[::]:1234";
     let http_listener_address = "[::]:3000";
+    let max_pixels_per_slot = 10_000;
+    let max_slot_duration = Duration::from_millis(100);
 
     // This only buffers between the server and the compression loop
     // There is a separate broadcast channel between the compression loop and individual websockets
@@ -46,10 +48,16 @@ async fn main() -> anyhow::Result<()> {
         async move { random_client_paints_loop(width, height, ws_message_tx_clone).await },
     );
 
-    let ascii_server =
-        AsciiServer::new(shared_state.clone(), ascii_listener_address, width, height)
-            .await
-            .context("Failed to start ASCII server")?;
+    let ascii_server = AsciiServer::new(
+        shared_state.clone(),
+        ascii_listener_address,
+        max_pixels_per_slot,
+        max_slot_duration,
+        width,
+        height,
+    )
+    .await
+    .context("Failed to start ASCII server")?;
     tokio::spawn(async move { ascii_server.run().await });
 
     run_http_server(shared_state, http_listener_address).await?;
@@ -60,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
 async fn rainbow_loop(shared_state: Arc<AppState>) -> anyhow::Result<()> {
     let tx = &shared_state.ws_message_tx;
 
-    let mut interval = interval(Duration::from_millis(2000));
+    let mut interval = interval(Duration::from_millis(20000));
     loop {
         interval.tick().await;
 
@@ -86,7 +94,7 @@ async fn random_client_paints_loop(
     height: u16,
     ws_message_tx: mpsc::Sender<WebSocketMessage>,
 ) -> anyhow::Result<()> {
-    let mut interval = interval(Duration::from_millis(50));
+    let mut interval = interval(Duration::from_millis(5_000));
     loop {
         interval.tick().await;
 

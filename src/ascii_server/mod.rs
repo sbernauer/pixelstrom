@@ -2,6 +2,7 @@ use std::{
     collections::{hash_map::Entry, HashMap},
     net::{IpAddr, SocketAddr},
     sync::Arc,
+    time::Duration,
 };
 
 use anyhow::Context;
@@ -10,6 +11,7 @@ use tokio::{
     io::AsyncWriteExt,
     net::{TcpListener, TcpStream},
     sync::{mpsc, RwLock},
+    task::JoinHandle,
 };
 use tracing::{debug, info, warn};
 
@@ -33,14 +35,19 @@ pub struct AsciiServer<'a> {
 
     _client_connections: HashMap<&'a str, ClientConnection<'a>>,
 
+    max_pixels_per_slot: usize,
+    max_slot_duration: Duration,
+
     width: u16,
     height: u16,
 }
 
-impl<'a> AsciiServer<'a> {
+impl AsciiServer<'_> {
     pub async fn new(
         shared_state: Arc<AppState>,
         listener_address: &str,
+        max_pixels_per_slot: usize,
+        max_slot_duration: Duration,
         width: u16,
         height: u16,
     ) -> anyhow::Result<Self> {
@@ -56,6 +63,8 @@ impl<'a> AsciiServer<'a> {
             connections_per_ip: Default::default(),
             _client_connections: Default::default(),
             listener,
+            max_pixels_per_slot,
+            max_slot_duration,
             width,
             height,
         })
@@ -80,22 +89,48 @@ impl<'a> AsciiServer<'a> {
             return Ok(());
         }
 
+        let (slot_start_tx, slot_start_rx) = mpsc::channel(1);
+        let (slot_end_tx, slot_end_rx) = mpsc::channel(1);
+
         // FIXME
-        let (_, slot_start) = mpsc::channel(1);
-        let (_, slot_end) = mpsc::channel(1);
+        let max_slot_duration = self.max_slot_duration;
+        let fixme_loop: JoinHandle<Result<(), anyhow::Error>> = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+
+            loop {
+                slot_start_tx
+                    .send(())
+                    .await
+                    .context("Failed to send event that clients slot has started")?;
+
+                tokio::time::sleep(max_slot_duration).await;
+
+                slot_end_tx
+                    .send(())
+                    .await
+                    .context("Failed to send event that clients slot has ended")?;
+
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        });
 
         let mut client_connection = ClientConnection::new(
             &self.user_manager,
             &self.shared_state,
-            slot_start,
-            slot_end,
+            slot_start_rx,
+            slot_end_rx,
+            self.max_pixels_per_slot,
+            self.max_slot_duration,
             self.width,
             self.height,
         );
+        debug!(%peer_ip, %peer_addr, "Closing connection");
         client_connection
             .run(&mut socket)
             .await
             .context("Failed to run client connection")?;
+
+        fixme_loop.abort();
 
         socket
             .shutdown()

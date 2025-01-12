@@ -1,4 +1,5 @@
 use core::str;
+use std::time::Duration;
 
 use nom::{
     branch::alt,
@@ -35,12 +36,32 @@ pub enum Request<'a> {
 
 pub enum Response {
     Help,
-    Size { width: u16, height: u16 },
+    Size {
+        width: u16,
+        height: u16,
+    },
     LoginNeeded,
     LoginSucceeded,
     LoginFailed,
-    GetPixel { x: u16, y: u16, rgba: u32 },
-    Done { num_pixels: usize },
+    GetPixel {
+        x: u16,
+        y: u16,
+        rgba: u32,
+    },
+    Start {
+        max_pixels_per_slot: usize,
+        max_slot_duration: Duration,
+    },
+    Done {
+        num_pixels: usize,
+    },
+    NotYourSlot,
+    QuotaExceeded {
+        max_pixels_per_slot: usize,
+    },
+    SlotNotClosedInTime {
+        max_slot_duration: Duration,
+    },
 }
 
 pub fn parse_request(i: &str) -> IResult<&str, Request> {
