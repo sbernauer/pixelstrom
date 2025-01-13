@@ -29,8 +29,8 @@ async fn main() -> anyhow::Result<()> {
     let height = 1080;
     let ascii_listener_address = "[::]:1234";
     let http_listener_address = "[::]:3000";
-    let max_pixels_per_slot = 10_000;
-    let max_slot_duration = Duration::from_millis(100);
+    let max_pixels_per_slot = 5_000;
+    let max_slot_duration = Duration::from_millis(125);
 
     // This only buffers between the server and the compression loop
     // There is a separate broadcast channel between the compression loop and individual websockets

@@ -110,7 +110,7 @@ impl AsciiServer<'_> {
                     .await
                     .context("Failed to send event that clients slot has ended")?;
 
-                tokio::time::sleep(Duration::from_millis(200)).await;
+                tokio::time::sleep(max_slot_duration).await;
             }
         });
 
