@@ -20,25 +20,28 @@ def load_image(image_path):
         raise ValueError(f"Failed to load image {image_path}: {e}")
 
 
-def connect_to_server(host, port, username, password):
+def connect_to_server(host, port):
     """
-    Establish a connection to the server, authenticate, and return the socket.
+    Establish a connection to the server and return the socket.
     """
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client_socket.connect((host, port))
 
+    return client_socket
+
+def login(client_socket, username, password):
+    """
+    Login in and check that the login was successful.
+    """
     # Send login credentials
     client_socket.sendall(f"LOGIN {username} {password}\n".encode('utf-8'))
 
     # Receive login response and assert success
-    login_response = client_socket.recv(1024).decode('utf-8').strip()
+    login_response = client_socket.recv(len("LOGIN SUCCEEDED\n")).decode('utf-8').strip()
     if login_response != "LOGIN SUCCEEDED":
         client_socket.close()
         raise ConnectionError(f"Login failed: {login_response}")
     print("Login succeeded")
-
-    return client_socket
-
 
 def get_screen_size(client_socket):
     """
@@ -124,10 +127,13 @@ def main():
         pixels, image_width, image_height = load_image(image_path)
 
         # Connect to the server and authenticate
-        with connect_to_server(server_host, server_port, username, password) as client_socket:
+        with connect_to_server(server_host, server_port) as client_socket:
             # Get the screen dimensions
             screen_width, screen_height = get_screen_size(client_socket)
             print(f"Screen size: {screen_width}x{screen_height}")
+
+            # Log in to set pixels
+            login(client_socket, username, password)
 
             # Track pixel drawing state
             pixel_state = {

@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     let ascii_listener_address = "[::]:1234";
     let http_listener_address = "[::]:3000";
     let max_pixels_per_slot = 5_000;
-    let max_slot_duration = Duration::from_millis(125);
+    let slot_duration = Duration::from_millis(100);
 
     // This only buffers between the server and the compression loop
     // There is a separate broadcast channel between the compression loop and individual websockets
@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
         shared_state.clone(),
         ascii_listener_address,
         max_pixels_per_slot,
-        max_slot_duration,
+        slot_duration,
         width,
         height,
     )

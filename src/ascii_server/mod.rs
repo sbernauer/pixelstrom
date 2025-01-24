@@ -10,16 +10,17 @@ use client_connection::ClientConnection;
 use tokio::{
     io::AsyncWriteExt,
     net::{TcpListener, TcpStream},
-    sync::{mpsc, RwLock},
-    task::JoinHandle,
+    sync::RwLock,
 };
 use tracing::{debug, info, warn};
+use user_scheduler::UserScheduler;
 
 use crate::{app_state::AppState, ascii_server::user_manager::UserManager};
 
 mod client_connection;
 mod parser;
 mod user_manager;
+mod user_scheduler;
 
 const MAX_INPUT_LINE_LENGTH: usize = 128;
 const MAX_CONNECTIONS_PER_IP: usize = 2;
@@ -31,12 +32,13 @@ pub struct AsciiServer<'a> {
 
     shared_state: Arc<AppState>,
     user_manager: UserManager,
+    user_scheduler: Arc<UserScheduler>,
     connections_per_ip: Arc<RwLock<HashMap<IpAddr, usize>>>,
 
     _client_connections: HashMap<&'a str, ClientConnection<'a>>,
 
     max_pixels_per_slot: usize,
-    max_slot_duration: Duration,
+    slot_duration: Duration,
 
     width: u16,
     height: u16,
@@ -47,7 +49,7 @@ impl AsciiServer<'_> {
         shared_state: Arc<AppState>,
         listener_address: &str,
         max_pixels_per_slot: usize,
-        max_slot_duration: Duration,
+        slot_duration: Duration,
         width: u16,
         height: u16,
     ) -> anyhow::Result<Self> {
@@ -55,16 +57,24 @@ impl AsciiServer<'_> {
             format!("Failed to bind to ASCII listener address {listener_address}")
         })?;
 
+        let user_scheduler = Arc::new(UserScheduler::new(slot_duration));
+
+        let user_scheduler_clone = user_scheduler.clone();
+        tokio::spawn(async move {
+            user_scheduler_clone.run().await;
+        });
+
         Ok(Self {
             shared_state,
             user_manager: UserManager::new_from_save_file()
                 .await
                 .context("Failed to create user manager")?,
+            user_scheduler,
             connections_per_ip: Default::default(),
             _client_connections: Default::default(),
             listener,
             max_pixels_per_slot,
-            max_slot_duration,
+            slot_duration,
             width,
             height,
         })
@@ -89,38 +99,12 @@ impl AsciiServer<'_> {
             return Ok(());
         }
 
-        let (slot_start_tx, slot_start_rx) = mpsc::channel(1);
-        let (slot_end_tx, slot_end_rx) = mpsc::channel(1);
-
-        // FIXME
-        let max_slot_duration = self.max_slot_duration;
-        let fixme_loop: JoinHandle<Result<(), anyhow::Error>> = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-
-            loop {
-                slot_start_tx
-                    .send(())
-                    .await
-                    .context("Failed to send event that clients slot has started")?;
-
-                tokio::time::sleep(max_slot_duration).await;
-
-                slot_end_tx
-                    .send(())
-                    .await
-                    .context("Failed to send event that clients slot has ended")?;
-
-                tokio::time::sleep(max_slot_duration).await;
-            }
-        });
-
         let mut client_connection = ClientConnection::new(
             &self.user_manager,
+            &self.user_scheduler,
             &self.shared_state,
-            slot_start_rx,
-            slot_end_rx,
             self.max_pixels_per_slot,
-            self.max_slot_duration,
+            self.slot_duration,
             self.width,
             self.height,
         );
@@ -129,8 +113,6 @@ impl AsciiServer<'_> {
             .run(&mut socket)
             .await
             .context("Failed to run client connection")?;
-
-        fixme_loop.abort();
 
         socket
             .shutdown()

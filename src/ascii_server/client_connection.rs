@@ -5,24 +5,31 @@ use futures::{SinkExt, StreamExt};
 use nom::Finish;
 use tokio::{net::TcpStream, select, sync::mpsc};
 use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
-use tracing::trace;
+use tracing::{trace, warn};
 
 use crate::{app_state::AppState, framebuffer::PixelUpdate};
 
 use super::{
     parser::{parse_request, Request, Response},
     user_manager::UserManager,
+    user_scheduler::UserScheduler,
     HELP_TEXT, MAX_INPUT_LINE_LENGTH,
 };
 
+pub enum SlotEvent {
+    SlotStart,
+    SlotEnd,
+}
+
 pub struct ClientConnection<'a> {
     user_manager: &'a UserManager,
+    user_scheduler: &'a UserScheduler,
     shared_state: &'a AppState,
 
-    slot_start: mpsc::Receiver<()>,
-    slot_end: mpsc::Receiver<()>,
+    slot_tx: mpsc::Sender<SlotEvent>,
+    slot_rx: mpsc::Receiver<SlotEvent>,
     max_pixels_per_slot: usize,
-    max_slot_duration: Duration,
+    slot_duration: Duration,
     painted: Vec<PixelUpdate>,
 
     width: u16,
@@ -31,6 +38,7 @@ pub struct ClientConnection<'a> {
     // State
     current_username: Option<String>,
     currently_in_slot: bool,
+    painting_finished: bool,
     current_pixel_count: usize,
 }
 
@@ -38,26 +46,29 @@ impl<'a> ClientConnection<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         user_manager: &'a UserManager,
+        user_scheduler: &'a UserScheduler,
         shared_state: &'a AppState,
-        slot_start: mpsc::Receiver<()>,
-        slot_end: mpsc::Receiver<()>,
         max_pixels_per_slot: usize,
-        max_slot_duration: Duration,
+        slot_duration: Duration,
         width: u16,
         height: u16,
     ) -> Self {
+        let (slot_tx, slot_rx) = mpsc::channel(1);
+
         Self {
             user_manager,
+            user_scheduler,
             shared_state,
-            slot_start,
-            slot_end,
+            slot_tx,
+            slot_rx,
             max_pixels_per_slot,
-            max_slot_duration,
+            slot_duration,
             painted: Default::default(),
             width,
             height,
             current_username: None,
             currently_in_slot: false,
+            painting_finished: false,
             current_pixel_count: 0,
         }
     }
@@ -71,29 +82,21 @@ impl<'a> ClientConnection<'a> {
         loop {
             enum Next {
                 ClientInput(Option<Result<String, LinesCodecError>>),
-                SlotStart,
-                SlotEnded,
+                SlotEvent(Option<SlotEvent>),
             }
 
             let next = select! {
                 // Cancellation safety: According to [`Framed`], [`tokio_stream::StreamExt::next`] is cancellation safe
                 line = framed.next() => Next::ClientInput(line),
                 // Cancellation safety: [`tokio::sync::mpsc::Receiver::recv`] is cancellation safe
-                _ = self.slot_start.recv() => Next::SlotStart,
-                // Cancellation safety: [`tokio::sync::mpsc::Receiver::recv`] is cancellation safe
-                _ = self.slot_end.recv() => Next::SlotEnded,
+                slot_event = self.slot_rx.recv() => Next::SlotEvent(slot_event),
             };
 
             // We need to store the current line, as the "request" variables lifetime is bound to it
             let mut _current_line = String::new();
             let response = match next {
                 // User send some input
-                Next::ClientInput(line) => {
-                    let Some(line) = line else {
-                        // The client closed the connection
-                        return Ok(());
-                    };
-
+                Next::ClientInput(Some(line)) => {
                     _current_line = match line {
                         Ok(line) => line,
                         Err(LinesCodecError::MaxLineLengthExceeded) => {
@@ -123,27 +126,46 @@ impl<'a> ClientConnection<'a> {
                             .context("Failed to process request")?,
                     }
                 }
-                // The slot to draw pixels started
-                Next::SlotStart => {
-                    self.currently_in_slot = true;
-                    self.current_pixel_count = 0;
-
-                    Some(Response::Start {
-                        max_pixels_per_slot: self.max_pixels_per_slot,
-                        max_slot_duration: self.max_slot_duration,
-                    })
+                Next::ClientInput(None) => {
+                    // The client closed the connection
+                    return Ok(());
                 }
-                // The slot to draw pixels ended
-                Next::SlotEnded => {
+                Next::SlotEvent(Some(SlotEvent::SlotStart)) => {
                     if self.currently_in_slot {
-                        // The client did not send DONE in time, let's send a warning (might be an error in the future)
-                        Some(Response::SlotNotClosedInTime {
-                            max_slot_duration: self.max_slot_duration,
-                        })
-                    } else {
-                        // Client did everything right, nothing to do
+                        warn!("Received slot start, but was already in slot. Ignoring it");
                         None
+                    } else {
+                        self.currently_in_slot = true;
+                        self.painting_finished = false;
+                        self.current_pixel_count = 0;
+
+                        Some(Response::Start {
+                            max_pixels_per_slot: self.max_pixels_per_slot,
+                            slot_duration: self.slot_duration,
+                        })
                     }
+                }
+                Next::SlotEvent(Some(SlotEvent::SlotEnd)) => {
+                    if !self.currently_in_slot {
+                        warn!("Received slot end, but was not in slot. Ignoring it");
+                        None
+                    } else {
+                        self.currently_in_slot = false;
+
+                        if self.painting_finished {
+                            // Client did everything right, nothing to do
+                            None
+                        } else {
+                            // The client did not send DONE in time
+                            Some(Response::SlotNotClosedInTime {
+                                slot_duration: self.slot_duration,
+                            })
+                        }
+                    }
+                }
+                Next::SlotEvent(None) => {
+                    // The client closed the connection
+                    return Ok(());
                 }
             };
 
@@ -199,20 +221,28 @@ impl<'a> ClientConnection<'a> {
                 width: self.width,
                 height: self.height,
             }),
-            Request::Login { username, password } => Some({
-                if self
+            Request::Login { username, password } => {
+                if self.current_username.is_some() {
+                    return Ok(Some(Response::AlreadyLoggedIn));
+                }
+
+                if !self
                     .user_manager
                     .check_credentials(username, password)
                     .await
                     .context(format!("Failed to check credentials of user {username}"))?
                 {
-                    self.current_username = Some(username.to_owned());
-                    Response::LoginSucceeded
-                } else {
-                    self.current_username = None;
-                    Response::LoginFailed
+                    return Ok(Some(Response::LoginFailed));
                 }
-            }),
+
+                self.current_username = Some(username.to_owned());
+
+                self.user_scheduler
+                    .register_user(username, self.slot_tx.clone())
+                    .await;
+
+                Some(Response::LoginSucceeded)
+            }
             Request::GetPixel { x, y } => self
                 .shared_state
                 .framebuffer
@@ -239,7 +269,7 @@ impl<'a> ClientConnection<'a> {
                 None
             }
             Request::Done => {
-                self.currently_in_slot = false;
+                self.painting_finished = true;
 
                 let num_pixels = self.painted.len();
                 let ws_update = self.shared_state.framebuffer.write().await.set_multi(
@@ -282,15 +312,18 @@ impl<'a> ClientConnection<'a> {
                 close_connection = true;
                 framed.send("ERROR LOGIN FAILED").await
             }
+            Response::AlreadyLoggedIn => {
+                framed.send("ERROR Already logged in").await
+            }
             Response::GetPixel { x, y, rgba } => {
                 framed.send(format!("PX {x} {y} {rgba:06x}")).await
             }
             Response::Start {
                 max_pixels_per_slot,
-                max_slot_duration,
+                slot_duration,
             } => {
                 framed
-                    .send(format!("START {} {}", max_pixels_per_slot, max_slot_duration.as_millis()))
+                    .send(format!("START {} {}", max_pixels_per_slot, slot_duration.as_millis()))
                     .await
             }
             Response::Done { num_pixels } => framed.send(format!("DONE {num_pixels}")).await,
@@ -308,10 +341,10 @@ impl<'a> ClientConnection<'a> {
                     .send(&format!("ERROR Quota exceeded. You are only allowed to set {max_pixels_per_slot} pixels per slot, please play fair!"))
                     .await
             }
-            Response::SlotNotClosedInTime { max_slot_duration } => {
+            Response::SlotNotClosedInTime { slot_duration } => {
                 close_connection = true;
                 framed
-                    .send(&format!("ERROR Slot not closed in time. After you finished drawing your pixels you need to send \"DONE\" to signalize you are done. Your slot lasts {max_slot_duration:?}, you need to send \"DONE\" in that period of time (keep the network delay in mind)"))
+                    .send(&format!("ERROR Slot not closed in time. After you finished drawing your pixels you need to send \"DONE\" to signalize you are done. Your slot lasts {slot_duration:?}, you need to send \"DONE\" in that period of time (keep the network delay in mind)"))
                     .await
             },
         }

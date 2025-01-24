@@ -10,9 +10,9 @@ use nom::{
     IResult,
 };
 
-#[derive(Debug)]
 // FIXME: This potentially leaks the password from the `Login` request.
 // Use something like educe or derive-more to skip this field
+#[derive(Debug)]
 pub enum Request<'a> {
     Help,
     Size,
@@ -43,6 +43,7 @@ pub enum Response {
     LoginNeeded,
     LoginSucceeded,
     LoginFailed,
+    AlreadyLoggedIn,
     GetPixel {
         x: u16,
         y: u16,
@@ -50,7 +51,7 @@ pub enum Response {
     },
     Start {
         max_pixels_per_slot: usize,
-        max_slot_duration: Duration,
+        slot_duration: Duration,
     },
     Done {
         num_pixels: usize,
@@ -60,7 +61,7 @@ pub enum Response {
         max_pixels_per_slot: usize,
     },
     SlotNotClosedInTime {
-        max_slot_duration: Duration,
+        slot_duration: Duration,
     },
 }
 
