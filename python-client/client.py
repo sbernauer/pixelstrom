@@ -1,3 +1,4 @@
+import argparse
 import socket
 import random
 import time
@@ -116,24 +117,26 @@ def draw_pixels(client_socket, pixels, pixel_count, duration, screen_width, scre
 
 
 def main():
-    server_host = '127.0.0.1'
-    server_port = 1234
-    username = "Sebidooo"
-    password = "test123"
-    image_path = "cat_sleeping_small.png"
+    parser = argparse.ArgumentParser("pixelstrom-client")
+    parser.add_argument("host", type=str)
+    parser.add_argument("port", type=int)
+    parser.add_argument("username", type=str)
+    parser.add_argument("password", type=str)
+    parser.add_argument("image", type=str)
+    args = parser.parse_args()
 
     try:
         # Load the image and get pixel data
-        pixels, image_width, image_height = load_image(image_path)
+        pixels, image_width, image_height = load_image(args.image)
 
         # Connect to the server and authenticate
-        with connect_to_server(server_host, server_port) as client_socket:
+        with connect_to_server(args.host, args.port) as client_socket:
             # Get the screen dimensions
             screen_width, screen_height = get_screen_size(client_socket)
             print(f"Screen size: {screen_width}x{screen_height}")
 
             # Log in to set pixels
-            login(client_socket, username, password)
+            login(client_socket, args.username, args.password)
 
             # Track pixel drawing state
             pixel_state = {
