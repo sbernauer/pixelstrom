@@ -7,12 +7,11 @@ use tokio::{
 };
 use tracing::trace;
 
+use super::client_connection::SlotEvent;
 use crate::{
     app_state::AppState,
     proto::{web_socket_message::Payload, CurrentlyPaintingClient, WebSocketMessage},
 };
-
-use super::client_connection::SlotEvent;
 
 pub struct UserScheduler {
     shared_state: Arc<AppState>,

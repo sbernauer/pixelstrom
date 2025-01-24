@@ -7,14 +7,13 @@ use tokio::{net::TcpStream, select, sync::mpsc};
 use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
 use tracing::{trace, warn};
 
-use crate::{app_state::AppState, framebuffer::PixelUpdate};
-
 use super::{
     parser::{parse_request, Request, Response},
     user_manager::UserManager,
     user_scheduler::UserScheduler,
     HELP_TEXT, MAX_INPUT_LINE_LENGTH,
 };
+use crate::{app_state::AppState, framebuffer::PixelUpdate};
 
 pub enum SlotEvent {
     SlotStart,
