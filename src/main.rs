@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     let ascii_listener_address = "[::]:1234";
     let http_listener_address = "[::]:3000";
     let max_pixels_per_slot = 5_000;
-    let slot_duration = Duration::from_millis(100);
+    let slot_duration = Duration::from_millis(500);
 
     // This only buffers between the server and the compression loop
     // There is a separate broadcast channel between the compression loop and individual websockets
@@ -40,13 +40,13 @@ async fn main() -> anyhow::Result<()> {
     let app_state = AppState::new(width, height, ws_message_tx, compressed_ws_message_rx);
     let shared_state = Arc::new(app_state);
 
-    let shared_state_clone = shared_state.clone();
-    tokio::spawn(async move { rainbow_loop(shared_state_clone).await });
+    // let shared_state_clone = shared_state.clone();
+    // tokio::spawn(async move { rainbow_loop(shared_state_clone).await });
 
-    let ws_message_tx_clone = shared_state.ws_message_tx.clone();
-    tokio::spawn(
-        async move { random_client_paints_loop(width, height, ws_message_tx_clone).await },
-    );
+    // let ws_message_tx_clone = shared_state.ws_message_tx.clone();
+    // tokio::spawn(
+    //     async move { random_client_paints_loop(width, height, ws_message_tx_clone).await },
+    // );
 
     let ascii_server = AsciiServer::new(
         shared_state.clone(),
@@ -65,6 +65,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(unused)]
 async fn rainbow_loop(shared_state: Arc<AppState>) -> anyhow::Result<()> {
     let tx = &shared_state.ws_message_tx;
 
@@ -89,6 +90,7 @@ async fn rainbow_loop(shared_state: Arc<AppState>) -> anyhow::Result<()> {
 }
 
 const SIZE: u16 = 300;
+#[allow(unused)]
 async fn random_client_paints_loop(
     width: u16,
     height: u16,
