@@ -190,8 +190,12 @@ function applyClientPainting(clientPainting) {
   ctx.putImageData(imageData, 0, 0);
 }
 
+function applyCurrentlyPaintingClient(currentlyPaintingClient) {
+  console.log("TODO: Put into list", currentlyPaintingClient)
+}
+
 function applyWebSocketMessage(webSocketMessage) {
-  console.log('Got WebSocketMessage', webSocketMessage, 'with payload', webSocketMessage.payload);
+  // console.log('Got WebSocketMessage', webSocketMessage, 'with payload', webSocketMessage.payload);
   switch (webSocketMessage.payload) {
     case 'webSocketClosedBecauseOfLag':
       alert("Your websocket connection had too much lag, it was closed. Either your network or your browser is too slow and could not handle the pixelstrom :P. Note to myself: Make a nice error box for this");
@@ -201,6 +205,10 @@ function applyWebSocketMessage(webSocketMessage) {
       break;
     case 'clientPainting':
       applyClientPainting(webSocketMessage.clientPainting);
+      break;
+    case 'currentlyPaintingClient':
+      applyCurrentlyPaintingClient(webSocketMessage.currentlyPaintingClient);
+      break;
   }
 }
 </script>

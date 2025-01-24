@@ -23,7 +23,7 @@ mod user_manager;
 mod user_scheduler;
 
 const MAX_INPUT_LINE_LENGTH: usize = 128;
-const MAX_CONNECTIONS_PER_IP: usize = 2;
+const MAX_CONNECTIONS_PER_IP: usize = 10;
 
 const HELP_TEXT: &str = "Help text here :)";
 
