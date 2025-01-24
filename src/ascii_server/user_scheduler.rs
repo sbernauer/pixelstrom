@@ -1,14 +1,21 @@
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
+use anyhow::Context;
 use tokio::{
     sync::{mpsc, RwLock},
     time::interval,
 };
 use tracing::trace;
 
+use crate::{
+    app_state::AppState,
+    proto::{web_socket_message::Payload, CurrentlyPaintingClient, WebSocketMessage},
+};
+
 use super::client_connection::SlotEvent;
 
 pub struct UserScheduler {
+    shared_state: Arc<AppState>,
     users_queue: RwLock<VecDeque<ActiveUser>>,
 
     slot_duration: Duration,
@@ -20,8 +27,9 @@ struct ActiveUser {
 }
 
 impl UserScheduler {
-    pub fn new(slot_duration: Duration) -> Self {
+    pub fn new(shared_state: Arc<AppState>, slot_duration: Duration) -> Self {
         Self {
+            shared_state,
             users_queue: Default::default(),
             slot_duration,
         }
@@ -46,63 +54,14 @@ impl UserScheduler {
             .write()
             .await
             .retain(|u| u.username != username);
-
-        // let mut active_users = self.active_users.write().await;
-        // let mut current_user_index = self.current_user_index.write().await;
-
-        // if let Some(pos) = active_users.iter().position(|p| p.username == username) {
-        //     active_users.remove(pos);
-
-        //     // Adjust index if necessary
-        //     if pos <= *current_user_index && *current_user_index > 0 {
-        //         *current_user_index -= 1;
-        //     }
-
-        //     // Keep index in bounds
-        //     *current_user_index %= active_users.len().max(1);
-        // }
     }
 
-    pub async fn run(&self) {
+    pub async fn run(&self) -> anyhow::Result<()> {
         let mut interval = interval(self.slot_duration);
 
         loop {
-            // // Stop previous user
-            // if let Some(ref slot_end_tx) = prev_slot_end_tx {
-            //     if let Err(err) = slot_end_tx.send(()).await {
-            //         error!(
-            //             error = &err as &dyn std::error::Error,
-            //             "Failed to send slot ended, unregistering user"
-            //         );
-            //         prev_slot_end_tx = None;
-            //     }
-            // }
-            // self.move_to_next_user().await;
-
-            // if let Some(current_user) = self
-            //     .active_users
-            //     .read()
-            //     .await
-            //     .get(*self.current_user_index.read().await)
-            // {
-            //     trace!(username = current_user.username, "Next slot started");
-
-            //     if let Err(err) = current_user.slot_start_tx.send(()).await {
-            //         error!(
-            //             error = &err as &dyn std::error::Error,
-            //             username = current_user.username,
-            //             "Failed to send slot started"
-            //         );
-            //         prev_slot_end_tx = None;
-            //     } else {
-            //         prev_slot_end_tx = Some(current_user.slot_end_tx.clone());
-            //         prev_slot_end_tx
-            //     }
-            // } else {
-            //     trace!("No current user to use this slow");
-            // };
-
             let mut users_queue = self.users_queue.write().await;
+
             // Stop previous user
             if let Some(prev) = users_queue.pop_front() {
                 trace!(username = prev.username, "Closing slot for");
@@ -119,6 +78,24 @@ impl UserScheduler {
                 if next.slot_tx.send(SlotEvent::SlotStart).await.is_err() {
                     self.unregister_user(&next.username).await;
                 }
+
+                let upcoming_users = users_queue
+                    .iter()
+                    .skip(1)
+                    .take(10)
+                    .map(|user| user.username.clone())
+                    .collect();
+                let ws_message = WebSocketMessage {
+                    payload: Some(Payload::CurrentlyPaintingClient(CurrentlyPaintingClient {
+                        currently_painting: next.username.clone(),
+                        upcoming: upcoming_users,
+                    })),
+                };
+                self.shared_state
+                    .ws_message_tx
+                    .send(ws_message)
+                    .await
+                    .context("Failed to send update to websocket message channel")?;
             } else {
                 trace!("No user playing, no one for the next slot");
             }

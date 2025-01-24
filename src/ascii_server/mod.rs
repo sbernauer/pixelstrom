@@ -57,11 +57,12 @@ impl AsciiServer<'_> {
             format!("Failed to bind to ASCII listener address {listener_address}")
         })?;
 
-        let user_scheduler = Arc::new(UserScheduler::new(slot_duration));
+        let user_scheduler = Arc::new(UserScheduler::new(shared_state.clone(), slot_duration));
 
         let user_scheduler_clone = user_scheduler.clone();
         tokio::spawn(async move {
-            user_scheduler_clone.run().await;
+            user_scheduler_clone.run().await?;
+            anyhow::Ok(())
         });
 
         Ok(Self {

@@ -13,6 +13,7 @@ message WebSocketMessage {
     WebSocketClosedBecauseOfLag web_socket_closed_because_of_lag = 1;
     ScreenSync screen_sync = 2;
     ClientPainting client_painting = 3;
+    CurrentlyPaintingClient currently_painting_client = 4;
   }
 }
 
@@ -38,6 +39,15 @@ message ClientPainting {
     // List of (2 byte x + 2 byte y + 4 byte (rgba)).
     // Contains multiple entries
     bytes painted = 2;
+}
+
+// It's now the turn for a client to paint
+message CurrentlyPaintingClient {
+    // Name of the currently painting client
+    string currentlyPainting = 1;
+
+    // List of the upcoming clients
+    repeated string upcoming = 2;
 }
 `;
 
@@ -65,17 +75,17 @@ window.onload = () => {
     received_counter++;
     const compressed = new Uint8Array(await event.data.arrayBuffer());
 
-    console.log(
-      'Got compressed message with',
-      compressed.length,
-      'bytes',
-      'Received:',
-      received_counter,
-      'Processed:',
-      processed_counter,
-      'Lag:',
-      received_counter - processed_counter,
-    );
+    // console.log(
+    //   'Got compressed message with',
+    //   compressed.length,
+    //   'bytes',
+    //   'Received:',
+    //   received_counter,
+    //   'Processed:',
+    //   processed_counter,
+    //   'Lag:',
+    //   received_counter - processed_counter,
+    // );
 
     const decompressed = streamingDecoder.decompress(compressed);
     try {
@@ -181,7 +191,7 @@ function applyClientPainting(clientPainting) {
 }
 
 function applyWebSocketMessage(webSocketMessage) {
-  // console.log('Got WebSocketMessage', webSocketMessage, 'with payload', webSocketMessage.payload);
+  console.log('Got WebSocketMessage', webSocketMessage, 'with payload', webSocketMessage.payload);
   switch (webSocketMessage.payload) {
     case 'webSocketClosedBecauseOfLag':
       alert("Your websocket connection had too much lag, it was closed. Either your network or your browser is too slow and could not handle the pixelstrom :P. Note to myself: Make a nice error box for this");
