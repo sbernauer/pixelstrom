@@ -1,7 +1,4 @@
 body {
+  overflow: hidden;
   background-color: black;
-
-  /* Make it take up the entire screen without scrolling */
-  /* https://stackoverflow.com/questions/41274876/how-to-fit-the-webpage-exactly-the-screen-size-without-scrolling */
-  height: 97vh;
 }

@@ -1,6 +1,14 @@
 <script setup>
+import UsersSidebar from '@/components/UsersSidebar.vue';
+import { ref } from 'vue';
 import { parse } from 'protobufjs';
 import { ZstdCodec } from 'zstd-codec';
+
+const currentUser = ref('');
+const upcomingUsers = ref([]);
+
+let currentScreenWidth;
+let currentScreenHeight;
 
 const protoSchema = `
 syntax = "proto3";
@@ -134,8 +142,11 @@ window.onload = () => {
 };
 
 function applyScreenSync(screenSync) {
-  if (screenSync.width === 0 || screenSync.height === 0) {
-    console.error('Invalid screenSync dimensions:', screenSync.width, screenSync.height);
+  currentScreenWidth = screenSync.width;
+  currentScreenHeight = screenSync.height;
+
+  if (currentScreenWidth === 0 || currentScreenHeight === 0) {
+    console.error('Invalid screenSync dimensions:', currentScreenWidth, currentScreenHeight);
     return;
   }
 
@@ -146,12 +157,10 @@ function applyScreenSync(screenSync) {
   const screen = document.getElementById('screen');
   const ctx = screen.getContext('2d');
 
-  // Set the screen size to the screenSync size
-  screen.width = screenSync.width;
-  screen.height = screenSync.height;
+  adjustScreenSize();
 
   // Create ImageData object to hold the pixels
-  const imageData = ctx.createImageData(screenSync.width, screenSync.height);
+  const imageData = ctx.createImageData(currentScreenWidth, currentScreenHeight);
 
   for (let byte = 0; byte < pixels.length; byte += 4) {
     imageData.data[byte + 0] = pixels[byte + 0]; // Red
@@ -170,8 +179,8 @@ function applyClientPainting(clientPainting) {
 
   const screen = document.getElementById('screen');
   const ctx = screen.getContext('2d');
-  const width = screen.width;
-  const height = screen.height;
+  const width = currentScreenWidth;
+  const height = currentScreenHeight;
 
   const imageData = ctx.getImageData(0, 0, width, height);
 
@@ -191,14 +200,17 @@ function applyClientPainting(clientPainting) {
 }
 
 function applyCurrentlyPaintingClient(currentlyPaintingClient) {
-  console.log("TODO: Put into list", currentlyPaintingClient)
+  currentUser.value = currentlyPaintingClient.currentlyPainting;
+  upcomingUsers.value = currentlyPaintingClient.upcoming;
 }
 
 function applyWebSocketMessage(webSocketMessage) {
   // console.log('Got WebSocketMessage', webSocketMessage, 'with payload', webSocketMessage.payload);
   switch (webSocketMessage.payload) {
     case 'webSocketClosedBecauseOfLag':
-      alert("Your websocket connection had too much lag, it was closed. Either your network or your browser is too slow and could not handle the pixelstrom :P. Note to myself: Make a nice error box for this");
+      alert(
+        'Your websocket connection had too much lag, it was closed. Either your network or your browser is too slow and could not handle the pixelstrom :P. Note to myself: Make a nice error box for this',
+      );
       break;
     case 'screenSync':
       applyScreenSync(webSocketMessage.screenSync);
@@ -211,18 +223,44 @@ function applyWebSocketMessage(webSocketMessage) {
       break;
   }
 }
+
+function adjustScreenSize() {
+  const screen = document.getElementById('screen');
+  const screenContainer = document.getElementById('screen-container');
+  const screenContainerWidth = screenContainer.getBoundingClientRect().width;
+
+  // Set the screen size to the screenSync size
+  screen.width = currentScreenWidth;
+  screen.height = currentScreenHeight;
+
+  screen.style.width = screenContainerWidth + 'px';
+  screen.style.height = (screenContainerWidth / currentScreenWidth) * currentScreenHeight + 'px';
+}
+
+window.addEventListener('resize', () => {
+  adjustScreenSize();
+});
 </script>
 
 <template>
-  <canvas id="screen"></canvas>
+  <div id="game-container">
+    <div id="screen-container">
+      <canvas id="screen"></canvas>
+    </div>
+    <UsersSidebar :current-user="currentUser" :upcoming-users="upcomingUsers" />
+  </div>
 </template>
 
 <style scoped>
-#screen {
-  /* display: flex; */
-  height: 100%;
-  width: 100%;
+#game-container {
+  display: flex;
+  overflow: hidden;
+}
 
+/* https://stackoverflow.com/a/7170097 */
+#screen-container {
+  /* width and height will be set by JavaScript */
+  flex: auto;
   background-color: black;
 }
 
