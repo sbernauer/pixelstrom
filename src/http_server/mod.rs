@@ -15,10 +15,14 @@ use tracing::info;
 
 use crate::{
     app_state::AppState,
-    http_server::{current_screen::get_current_screen, websocket::handle_websocket},
+    http_server::{
+        current_screen::get_current_screen, current_screen_size::get_current_screen_size,
+        websocket::handle_websocket,
+    },
 };
 
 mod current_screen;
+mod current_screen_size;
 pub mod websocket;
 
 pub async fn run_http_server(
@@ -51,6 +55,7 @@ fn build_router(shared_state: Arc<AppState>) -> Router {
             ),
         )
         .route("/api/current-screen", get(get_current_screen))
+        .route("/api/current-screen-size", get(get_current_screen_size))
         .nest_service("/static", get_service(ServeDir::new("./web/static")))
         // TODO: Try to restrict
         .layer(CorsLayer::permissive())
