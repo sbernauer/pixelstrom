@@ -38,13 +38,13 @@ async fn main() -> anyhow::Result<()> {
         .context("failed to create app state")?;
     let shared_state = Arc::new(app_state);
 
-    let shared_state_clone = shared_state.clone();
-    tokio::spawn(async move { rainbow_loop(shared_state_clone).await });
+    // let shared_state_clone = shared_state.clone();
+    // tokio::spawn(async move { rainbow_loop(shared_state_clone).await });
 
-    let ws_message_tx_clone = shared_state.ws_message_tx.clone();
-    tokio::spawn(
-        async move { random_client_paints_loop(width, height, ws_message_tx_clone).await },
-    );
+    // let ws_message_tx_clone = shared_state.ws_message_tx.clone();
+    // tokio::spawn(
+    //     async move { random_client_paints_loop(width, height, ws_message_tx_clone).await },
+    // );
 
     let ascii_server = AsciiServer::new(
         shared_state.clone(),

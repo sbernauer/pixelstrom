@@ -36,7 +36,7 @@ impl Statistics {
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        let mut interval = interval(Duration::from_millis(100)); // FIXME: Reduce
+        let mut interval = interval(Duration::from_millis(500));
         loop {
             interval.tick().await;
 

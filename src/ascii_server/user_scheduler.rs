@@ -41,35 +41,20 @@ impl UserScheduler {
     /// Returns
     /// 1. A receiver when the slot for the given user *starts*
     /// 2. A receiver when the slot for the given user *ends*
-    pub async fn register_user(
-        &self,
-        username: &str,
-        slot_tx: mpsc::Sender<SlotEvent>,
-    ) -> anyhow::Result<()> {
+    pub async fn register_user(&self, username: &str, slot_tx: mpsc::Sender<SlotEvent>) {
         let active_user = ActiveUser {
             username: username.to_string(),
             slot_tx,
         };
 
-        let mut users_queue = self.users_queue.write().await;
-        let mut active_users = self.active_users.write().await;
+        // As we store them in the order of joining this new user comes last
+        self.active_users
+            .write()
+            .await
+            .push_back(username.to_string());
 
         // Users start at the very end of the queue
-        users_queue.push_back(active_user);
-
-        // It's a bit more complex where in the queue the user got inserted.
-        let current_user = users_queue
-            .front()
-            .expect("We just pushed one element, the users queue can not be empty");
-        let current_user_pos = active_users
-            .iter()
-            .position(|username| username == &current_user.username)
-            // If not found we are probably the only user. Let's stuff the user at the end
-            .unwrap_or_else(|| active_users.len().saturating_sub(1));
-
-        active_users.insert(current_user_pos, username.to_string());
-
-        Ok(())
+        self.users_queue.write().await.push_back(active_user);
     }
 
     /// Unregisters the given user.
@@ -129,7 +114,29 @@ impl UserScheduler {
         }
     }
 
+    /// Return the users in the order of playing. The list alway starts with the oldest user.
     pub async fn all_users_as_ordered_list(&self) -> Vec<String> {
-        self.active_users.read().await.iter().cloned().collect()
+        let mut ordered_users = self
+            .users_queue
+            .read()
+            .await
+            .iter()
+            .map(|user| user.username.to_string())
+            .collect::<Vec<_>>();
+        let Some(oldest_user) = self.active_users.read().await.front().cloned() else {
+            // There are currently no active users.
+            return vec![];
+        };
+
+        let oldest_user_pos = ordered_users
+            .iter()
+            .position(|username| username == &oldest_user)
+            // Not sure what the oldest ust is, so let's keep the list unchanged
+            .unwrap_or_default();
+
+        // Rotate the list in such a way that the oldest player is always the first one
+        ordered_users.rotate_left(oldest_user_pos);
+
+        ordered_users
     }
 }

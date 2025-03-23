@@ -245,7 +245,7 @@ impl<'a> ClientConnection<'a> {
                 self.shared_state
                     .user_scheduler
                     .register_user(username, self.slot_tx.clone())
-                    .await?;
+                    .await;
 
                 Some(Response::LoginSucceeded)
             }
