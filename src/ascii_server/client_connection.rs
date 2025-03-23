@@ -9,8 +9,6 @@ use tracing::{trace, warn};
 
 use super::{
     parser::{parse_request, Request, Response},
-    user_manager::UserManager,
-    user_scheduler::UserScheduler,
     HELP_TEXT, MAX_INPUT_LINE_LENGTH,
 };
 use crate::{app_state::AppState, framebuffer::PixelUpdate};
@@ -21,8 +19,6 @@ pub enum SlotEvent {
 }
 
 pub struct ClientConnection<'a> {
-    user_manager: &'a UserManager,
-    user_scheduler: &'a UserScheduler,
     shared_state: &'a AppState,
 
     slot_tx: mpsc::Sender<SlotEvent>,
@@ -44,8 +40,6 @@ pub struct ClientConnection<'a> {
 impl<'a> ClientConnection<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        user_manager: &'a UserManager,
-        user_scheduler: &'a UserScheduler,
         shared_state: &'a AppState,
         max_pixels_per_slot: usize,
         slot_duration: Duration,
@@ -55,8 +49,6 @@ impl<'a> ClientConnection<'a> {
         let (slot_tx, slot_rx) = mpsc::channel(1);
 
         Self {
-            user_manager,
-            user_scheduler,
             shared_state,
             slot_tx,
             slot_rx,
@@ -184,7 +176,12 @@ impl<'a> ClientConnection<'a> {
         }
 
         if let Some(username) = &self.current_username {
-            if let Err(err) = self.user_scheduler.unregister_user(&username).await {
+            if let Err(err) = self
+                .shared_state
+                .user_scheduler
+                .unregister_user(username)
+                .await
+            {
                 tracing::warn!(?err, "Failed to unregister user {username}");
             }
         }
@@ -234,6 +231,7 @@ impl<'a> ClientConnection<'a> {
                 }
 
                 if !self
+                    .shared_state
                     .user_manager
                     .check_credentials(username, password)
                     .await
@@ -244,7 +242,8 @@ impl<'a> ClientConnection<'a> {
 
                 self.current_username = Some(username.to_owned());
 
-                self.user_scheduler
+                self.shared_state
+                    .user_scheduler
                     .register_user(username, self.slot_tx.clone())
                     .await?;
 

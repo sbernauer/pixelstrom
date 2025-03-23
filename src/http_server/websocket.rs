@@ -23,7 +23,7 @@ const ZSTD_COMPRESSION_LEVEL: i32 = DEFAULT_COMPRESSION_LEVEL;
 pub async fn handle_websocket(mut ws: WebSocket, state: State<Arc<AppState>>) {
     info!("Websocket connected");
 
-    let mut rx = state.compressed_ws_message_tx.resubscribe();
+    let mut rx = state.compressed_ws_message_rx.resubscribe();
 
     loop {
         let compressed_ws_message = rx.recv().await;

@@ -1,52 +1,67 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::Context;
-use tokio::sync::mpsc;
+use tokio::{
+    sync::{mpsc, RwLock},
+    time::interval,
+};
 
-use crate::proto::{
-    web_socket_message::Payload, UserStatistics, UserStatisticsUpdate, WebSocketMessage,
+use crate::{
+    ascii_server::user_scheduler::UserScheduler,
+    proto::{web_socket_message::Payload, UserStatistics, UserStatisticsUpdate, WebSocketMessage},
 };
 
 pub struct Statistics {
     ws_message_tx: mpsc::Sender<WebSocketMessage>,
+    user_scheduler: Arc<UserScheduler>,
 
-    stats: HashMap<String, UserStats>,
+    stats: RwLock<HashMap<String, UserStats>>,
 }
 
-pub struct UserStats {}
+pub struct UserStats {
+    pub pixels_per_second: f32,
+    pub average_response_time_milliseconds: f32,
+}
 
 impl Statistics {
-    pub fn new(ws_message_tx: mpsc::Sender<WebSocketMessage>) -> Self {
+    pub fn new(
+        ws_message_tx: mpsc::Sender<WebSocketMessage>,
+        user_scheduler: Arc<UserScheduler>,
+    ) -> Self {
         Self {
             ws_message_tx,
-            stats: HashMap::new(),
+            user_scheduler,
+            stats: RwLock::new(HashMap::new()),
         }
     }
 
-    pub async fn register_user(&mut self, username: &str) -> anyhow::Result<()> {
-        if !self.stats.contains_key(username) {
-            self.stats.insert(username.to_string(), UserStats {});
+    pub async fn run(&self) -> anyhow::Result<()> {
+        let mut interval = interval(Duration::from_millis(100)); // FIXME: Reduce
+        loop {
+            interval.tick().await;
+
+            self.send_update()
+                .await
+                .context("failed to send statistics update")?;
         }
-        self.send_update().await?;
-
-        Ok(())
-    }
-
-    pub async fn unregister_user(&mut self, username: &str) -> anyhow::Result<()> {
-        self.stats.remove(username);
-        self.send_update().await?;
-
-        Ok(())
     }
 
     pub async fn send_update(&self) -> anyhow::Result<()> {
-        let statistics = self
-            .stats
+        let all_users_as_ordered_list = self.user_scheduler.all_users_as_ordered_list().await;
+        let current_stats = self.stats.read().await;
+        let statistics = all_users_as_ordered_list
             .iter()
-            .map(|(username, _stats)| UserStatistics {
-                username: username.to_string(),
-                pixels_per_s: 1000,
-                average_response_time_ms: 42,
+            .map(|username| match current_stats.get(username) {
+                Some(stats) => UserStatistics {
+                    username: username.to_string(),
+                    pixels_per_second: stats.pixels_per_second,
+                    average_response_time_milliseconds: stats.average_response_time_milliseconds,
+                },
+                None => UserStatistics {
+                    username: username.to_string(),
+                    pixels_per_second: 0.0,
+                    average_response_time_milliseconds: 0.0,
+                },
             })
             .collect();
 
@@ -55,8 +70,6 @@ impl Statistics {
                 statistics,
             })),
         };
-
-        tracing::warn!(?ws_message, "Sending stats");
 
         self.ws_message_tx
             .send(ws_message)

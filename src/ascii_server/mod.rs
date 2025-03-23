@@ -13,14 +13,13 @@ use tokio::{
     sync::RwLock,
 };
 use tracing::{debug, info, warn};
-use user_scheduler::UserScheduler;
 
-use crate::{app_state::AppState, ascii_server::user_manager::UserManager};
+use crate::app_state::AppState;
 
 mod client_connection;
 mod parser;
-mod user_manager;
-mod user_scheduler;
+pub mod user_manager;
+pub mod user_scheduler;
 
 const MAX_INPUT_LINE_LENGTH: usize = 128;
 const MAX_CONNECTIONS_PER_IP: usize = 10;
@@ -31,8 +30,6 @@ pub struct AsciiServer<'a> {
     listener: TcpListener,
 
     shared_state: Arc<AppState>,
-    user_manager: UserManager,
-    user_scheduler: Arc<UserScheduler>,
     connections_per_ip: Arc<RwLock<HashMap<IpAddr, usize>>>,
 
     _client_connections: HashMap<&'a str, ClientConnection<'a>>,
@@ -57,20 +54,8 @@ impl AsciiServer<'_> {
             format!("Failed to bind to ASCII listener address {listener_address}")
         })?;
 
-        let user_scheduler = Arc::new(UserScheduler::new(shared_state.clone(), slot_duration));
-
-        let user_scheduler_clone = user_scheduler.clone();
-        tokio::spawn(async move {
-            user_scheduler_clone.run().await?;
-            anyhow::Ok(())
-        });
-
         Ok(Self {
             shared_state,
-            user_manager: UserManager::new_from_save_file()
-                .await
-                .context("Failed to create user manager")?,
-            user_scheduler,
             connections_per_ip: Default::default(),
             _client_connections: Default::default(),
             listener,
@@ -101,8 +86,6 @@ impl AsciiServer<'_> {
         }
 
         let mut client_connection = ClientConnection::new(
-            &self.user_manager,
-            &self.user_scheduler,
             &self.shared_state,
             self.max_pixels_per_slot,
             self.slot_duration,

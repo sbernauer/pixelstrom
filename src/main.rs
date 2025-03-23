@@ -8,7 +8,7 @@ use tokio::{sync::mpsc, time::interval};
 
 use crate::{
     app_state::AppState,
-    http_server::{run_http_server, websocket::start_websocket_compressor_loop},
+    http_server::run_http_server,
     proto::{web_socket_message::Payload, UserPainting, WebSocketMessage},
 };
 
@@ -33,21 +33,18 @@ async fn main() -> anyhow::Result<()> {
     let max_pixels_per_slot = 5_000;
     let slot_duration = Duration::from_millis(500);
 
-    // This only buffers between the server and the compression loop
-    // There is a separate broadcast channel between the compression loop and individual websockets
-    let (ws_message_tx, ws_message_rx) = mpsc::channel(32);
-    let compressed_ws_message_rx = start_websocket_compressor_loop(ws_message_rx).await;
-
-    let app_state = AppState::new(width, height, ws_message_tx, compressed_ws_message_rx);
+    let app_state = AppState::new(slot_duration, width, height)
+        .await
+        .context("failed to create app state")?;
     let shared_state = Arc::new(app_state);
 
-    // let shared_state_clone = shared_state.clone();
-    // tokio::spawn(async move { rainbow_loop(shared_state_clone).await });
+    let shared_state_clone = shared_state.clone();
+    tokio::spawn(async move { rainbow_loop(shared_state_clone).await });
 
-    // let ws_message_tx_clone = shared_state.ws_message_tx.clone();
-    // tokio::spawn(
-    //     async move { random_client_paints_loop(width, height, ws_message_tx_clone).await },
-    // );
+    let ws_message_tx_clone = shared_state.ws_message_tx.clone();
+    tokio::spawn(
+        async move { random_client_paints_loop(width, height, ws_message_tx_clone).await },
+    );
 
     let ascii_server = AsciiServer::new(
         shared_state.clone(),
