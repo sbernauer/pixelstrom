@@ -78,16 +78,15 @@ impl UserScheduler {
                     self.unregister_user(&next.username).await;
                 }
 
-                let upcoming_users = users_queue
-                    .iter()
-                    .skip(1)
-                    .take(10)
-                    .map(|user| user.username.clone())
-                    .collect();
+                // let upcoming_users = users_queue
+                //     .iter()
+                //     .skip(1)
+                //     .take(10)
+                //     .map(|user| user.username.clone())
+                //     .collect();
                 let ws_message = WebSocketMessage {
                     payload: Some(Payload::CurrentlyPaintingClient(CurrentlyPaintingClient {
                         currently_painting: next.username.clone(),
-                        upcoming: upcoming_users,
                     })),
                 };
                 self.shared_state

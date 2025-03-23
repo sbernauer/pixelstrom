@@ -53,9 +53,27 @@ message ClientPainting {
 message CurrentlyPaintingClient {
     // Name of the currently painting client
     string currentlyPainting = 1;
+}
 
-    // List of the upcoming clients
-    repeated string upcoming = 2;
+// Get an update on the client statistics.
+// This message is also send once a client joins or leaves.
+// This makes it easier for the frontend, it can update the users list on every ClientStatisticsUpdate
+// and the pointer to the currently painting client for every CurrentlyPaintingClient
+message ClientStatisticsUpdate {
+    // List of statistics
+    repeated ClientStatistics statistics = 1;
+}
+
+
+message ClientStatistics {
+    // Name of the client the statistics are for
+    string client = 1;
+
+    // The number of pixels/s the client is sending
+    int32 pixelsPerS = 2;
+
+    // The average response time of the client (Completing drawing is counted as response)
+    int32 averageResponseTimeMs = 3;
 }
 `;
 
