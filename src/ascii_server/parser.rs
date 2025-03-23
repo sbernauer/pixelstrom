@@ -7,7 +7,7 @@ use nom::{
     character::complete::{alphanumeric1, char},
     combinator::{map, map_res},
     sequence::{preceded, separated_pair},
-    IResult,
+    IResult, Parser,
 };
 
 // FIXME: This potentially leaks the password from the `Login` request.
@@ -73,26 +73,28 @@ pub fn parse_request(i: &str) -> IResult<&str, Request> {
         parse_size,
         parse_login,
         parse_help,
-    ))(i)
+    ))
+    .parse(i)
 }
 
 fn parse_help(i: &str) -> IResult<&str, Request> {
-    map(tag("HELP"), |_| Request::Help)(i)
+    map(tag("HELP"), |_| Request::Help).parse(i)
 }
 
 fn parse_size(i: &str) -> IResult<&str, Request> {
-    map(tag("SIZE"), |_| Request::Size)(i)
+    map(tag("SIZE"), |_| Request::Size).parse(i)
 }
 
 fn parse_done(i: &str) -> IResult<&str, Request> {
-    map(tag("DONE"), |_| Request::Done)(i)
+    map(tag("DONE"), |_| Request::Done).parse(i)
 }
 
 fn parse_login(i: &str) -> IResult<&str, Request> {
     let (i, (username, password)) = preceded(
         tag("LOGIN "),
         separated_pair(alphanumeric1, char(' '), alphanumeric1),
-    )(i)?;
+    )
+    .parse(i)?;
 
     Ok((i, Request::Login { username, password }))
 }
@@ -105,7 +107,8 @@ fn parse_get_or_set_pixel(i: &str) -> IResult<&str, Request> {
             char(' '),
             nom::character::complete::u16,
         ),
-    )(i)?;
+    )
+    .parse(i)?;
 
     // Read request, as there are no following bytes
     if i.is_empty() {
@@ -113,7 +116,7 @@ fn parse_get_or_set_pixel(i: &str) -> IResult<&str, Request> {
     }
 
     // As there are bytes left, this needs to be a SetPixel request
-    let (i, rgba) = preceded(char(' '), ascii_hex_u32)(i)?;
+    let (i, rgba) = preceded(char(' '), ascii_hex_u32).parse(i)?;
 
     Ok((i, Request::SetPixel { x, y, rgba }))
 }
@@ -122,5 +125,6 @@ fn ascii_hex_u32(i: &str) -> IResult<&str, u32> {
     map_res(
         take_while_m_n(6, 6, |c: char| c.is_ascii_hexdigit()),
         |hex: &str| u32::from_str_radix(hex, 16),
-    )(i)
+    )
+    .parse(i)
 }
