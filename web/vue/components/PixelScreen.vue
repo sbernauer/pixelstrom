@@ -5,7 +5,7 @@ import { parse } from 'protobufjs';
 import { ZstdCodec } from 'zstd-codec';
 
 const currentUser = ref('');
-const upcomingUsers = ref([]);
+const users = ref([]);
 
 let currentScreenWidth;
 let currentScreenHeight;
@@ -20,8 +20,9 @@ message WebSocketMessage {
   oneof payload {
     WebSocketClosedBecauseOfLag web_socket_closed_because_of_lag = 1;
     ScreenSync screen_sync = 2;
-    ClientPainting client_painting = 3;
-    CurrentlyPaintingClient currently_painting_client = 4;
+    UserPainting user_painting = 3;
+    CurrentlyPaintingUser currently_painting_user = 4;
+    UserStatisticsUpdate user_statistics_update = 5;
   }
 }
 
@@ -39,40 +40,39 @@ message ScreenSync {
     bytes pixels = 3;
 }
 
-// Partial update of the screen after a client finished painting
-message ClientPainting {
-    // Name of the client that painted the pixels
-    string client = 1;
+// Partial update of the screen after a user finished painting
+message UserPainting {
+    // Name of the user that painted the pixels
+    string username = 1;
 
     // List of (2 byte x + 2 byte y + 4 byte (rgba)).
     // Contains multiple entries
     bytes painted = 2;
 }
 
-// It's now the turn for a client to paint
-message CurrentlyPaintingClient {
-    // Name of the currently painting client
+// It's now the turn for a user to paint
+message CurrentlyPaintingUser {
+    // Name of the currently painting user
     string currentlyPainting = 1;
 }
 
-// Get an update on the client statistics.
-// This message is also send once a client joins or leaves.
-// This makes it easier for the frontend, it can update the users list on every ClientStatisticsUpdate
-// and the pointer to the currently painting client for every CurrentlyPaintingClient
-message ClientStatisticsUpdate {
+// Get an update on the user statistics.
+// This message is also send once a user joins or leaves.
+// This makes it easier for the frontend, it can update the users list on every UserStatisticsUpdate
+// and the pointer to the currently painting user for every CurrentlyPaintingUser
+message UserStatisticsUpdate {
     // List of statistics
-    repeated ClientStatistics statistics = 1;
+    repeated UserStatistics statistics = 1;
 }
 
+message UserStatistics {
+    // Name of the user the statistics are for
+    string username = 1;
 
-message ClientStatistics {
-    // Name of the client the statistics are for
-    string client = 1;
-
-    // The number of pixels/s the client is sending
+    // The number of pixels/s the user is sending
     int32 pixelsPerS = 2;
 
-    // The average response time of the client (Completing drawing is counted as response)
+    // The average response time of the user (Completing drawing is counted as response)
     int32 averageResponseTimeMs = 3;
 }
 `;
@@ -191,9 +191,9 @@ function applyScreenSync(screenSync) {
   ctx.putImageData(imageData, 0, 0);
 }
 
-function applyClientPainting(clientPainting) {
-  // console.log(clientPainting.client, 'painted', clientPainting.painted.length / 8, 'pixels');
-  const painted = new Uint8Array(clientPainting.painted);
+function applyUserPainting(userPainting) {
+  // console.log(userPainting.user, 'painted', userPainting.painted.length / 8, 'pixels');
+  const painted = new Uint8Array(userPainting.painted);
 
   const screen = document.getElementById('screen');
   const ctx = screen.getContext('2d');
@@ -217,9 +217,12 @@ function applyClientPainting(clientPainting) {
   ctx.putImageData(imageData, 0, 0);
 }
 
-function applyCurrentlyPaintingClient(currentlyPaintingClient) {
-  currentUser.value = currentlyPaintingClient.currentlyPainting;
-  upcomingUsers.value = currentlyPaintingClient.upcoming;
+function applyCurrentlyPaintingUser(currentlyPaintingUser) {
+  currentUser.value = currentlyPaintingUser.currentlyPainting;
+}
+
+function applyUserStatisticsUpdate(userStatisticsUpdate) {
+  users.value = userStatisticsUpdate.statistics;
 }
 
 function applyWebSocketMessage(webSocketMessage) {
@@ -233,11 +236,14 @@ function applyWebSocketMessage(webSocketMessage) {
     case 'screenSync':
       applyScreenSync(webSocketMessage.screenSync);
       break;
-    case 'clientPainting':
-      applyClientPainting(webSocketMessage.clientPainting);
+    case 'userPainting':
+      applyUserPainting(webSocketMessage.userPainting);
       break;
-    case 'currentlyPaintingClient':
-      applyCurrentlyPaintingClient(webSocketMessage.currentlyPaintingClient);
+    case 'currentlyPaintingUser':
+      applyCurrentlyPaintingUser(webSocketMessage.currentlyPaintingUser);
+      break;
+    case 'userStatisticsUpdate':
+      applyUserStatisticsUpdate(webSocketMessage.userStatisticsUpdate);
       break;
   }
 }
@@ -265,7 +271,7 @@ window.addEventListener('resize', () => {
     <div id="screen-container">
       <canvas id="screen"></canvas>
     </div>
-    <UsersSidebar :current-user="currentUser" :upcoming-users="upcomingUsers" />
+    <UsersSidebar :current-user="currentUser" :users="users"/>
   </div>
 </template>
 
