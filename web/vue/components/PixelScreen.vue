@@ -1,8 +1,8 @@
 <script setup>
-import UsersSidebar from '@/components/UsersSidebar.vue';
-import { ref } from 'vue';
+import UsersSidebar from '@/components/user/UsersSidebar.vue';
 import { parse } from 'protobufjs';
 import { ZstdCodec } from 'zstd-codec';
+import { ref } from 'vue';
 
 const currentUser = ref('');
 const users = ref([]);
@@ -70,10 +70,10 @@ message UserStatistics {
     string username = 1;
 
     // The number of pixels/s the user is sending
-    int32 pixelsPerS = 2;
+    float pixelsPerSecond = 2;
 
     // The average response time of the user (Completing drawing is counted as response)
-    int32 averageResponseTimeMs = 3;
+    float averageResponseTimeMilliseconds = 3;
 }
 `;
 
@@ -271,7 +271,7 @@ window.addEventListener('resize', () => {
     <div id="screen-container">
       <canvas id="screen"></canvas>
     </div>
-    <UsersSidebar :current-user="currentUser" :users="users"/>
+    <UsersSidebar :current-painting-user="currentUser" :users="users"/>
   </div>
 </template>
 
