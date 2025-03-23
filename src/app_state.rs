@@ -1,9 +1,10 @@
 use tokio::sync::{broadcast, mpsc, RwLock};
 
-use crate::{framebuffer::FrameBuffer, proto::WebSocketMessage};
+use crate::{framebuffer::FrameBuffer, proto::WebSocketMessage, statistics::Statistics};
 
 pub struct AppState {
     pub framebuffer: RwLock<FrameBuffer>,
+    pub statistics: RwLock<Statistics>,
 
     pub ws_message_tx: mpsc::Sender<WebSocketMessage>,
     // TODO: Can we avoid cloning the [`Vec`] for every websocket connection?
@@ -21,6 +22,7 @@ impl AppState {
     ) -> Self {
         Self {
             framebuffer: RwLock::new(FrameBuffer::new(width, height)),
+            statistics: RwLock::new(Statistics::new(ws_message_tx.clone())),
             ws_message_tx,
             compressed_ws_message_tx,
         }

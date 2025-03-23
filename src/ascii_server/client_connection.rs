@@ -78,7 +78,7 @@ impl<'a> ClientConnection<'a> {
             LinesCodec::new_with_max_length(MAX_INPUT_LINE_LENGTH),
         );
 
-        loop {
+        'outer: loop {
             enum Next {
                 ClientInput(Option<Result<String, LinesCodecError>>),
                 SlotEvent(Option<SlotEvent>),
@@ -103,7 +103,7 @@ impl<'a> ClientConnection<'a> {
                                 .send(format!("ERROR The request line was too long. You can send at a maximum {MAX_INPUT_LINE_LENGTH} characters before you need to send a newline"))
                                 .await
                                 .context("Failed to send response to client")?;
-                            return Ok(());
+                            break 'outer;
                         }
                         Err(err) => {
                             Err(err).context("Failed to read next line from framed LinesCodec")?
@@ -127,7 +127,7 @@ impl<'a> ClientConnection<'a> {
                 }
                 Next::ClientInput(None) => {
                     // The client closed the connection
-                    return Ok(());
+                    break 'outer;
                 }
                 Next::SlotEvent(Some(SlotEvent::SlotStart)) => {
                     if self.currently_in_slot {
@@ -164,7 +164,7 @@ impl<'a> ClientConnection<'a> {
                 }
                 Next::SlotEvent(None) => {
                     // The client closed the connection
-                    return Ok(());
+                    break 'outer;
                 }
             };
 
@@ -179,9 +179,17 @@ impl<'a> ClientConnection<'a> {
                 .await
                 .context("Failed to send response to client")?;
             if close_connection {
-                return Ok(());
+                break 'outer;
             }
         }
+
+        if let Some(username) = &self.current_username {
+            if let Err(err) = self.user_scheduler.unregister_user(&username).await {
+                tracing::warn!(?err, "Failed to unregister user {username}");
+            }
+        }
+
+        Ok(())
     }
 
     #[inline(always)]
@@ -238,7 +246,7 @@ impl<'a> ClientConnection<'a> {
 
                 self.user_scheduler
                     .register_user(username, self.slot_tx.clone())
-                    .await;
+                    .await?;
 
                 Some(Response::LoginSucceeded)
             }

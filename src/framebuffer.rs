@@ -1,7 +1,7 @@
 use colorgrad::Gradient;
 use prost::bytes::BufMut;
 
-use crate::proto::{web_socket_message::Payload, ClientPainting, ScreenSync, WebSocketMessage};
+use crate::proto::{web_socket_message::Payload, ScreenSync, UserPainting, WebSocketMessage};
 
 pub struct FrameBuffer {
     width: u16,
@@ -59,7 +59,7 @@ impl FrameBuffer {
     #[inline(always)]
     pub fn set_multi(
         &mut self,
-        client: impl Into<String>,
+        username: impl Into<String>,
         painted: &[PixelUpdate],
     ) -> WebSocketMessage {
         let mut painted_bytes = Vec::with_capacity(painted.len() * 8 /* bytes per pixel */);
@@ -72,8 +72,8 @@ impl FrameBuffer {
         }
 
         WebSocketMessage {
-            payload: Some(Payload::ClientPainting(ClientPainting {
-                client: client.into(),
+            payload: Some(Payload::UserPainting(UserPainting {
+                username: username.into(),
                 painted: painted_bytes,
             })),
         }

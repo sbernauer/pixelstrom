@@ -9,13 +9,14 @@ use tokio::{sync::mpsc, time::interval};
 use crate::{
     app_state::AppState,
     http_server::{run_http_server, websocket::start_websocket_compressor_loop},
-    proto::{web_socket_message::Payload, ClientPainting, WebSocketMessage},
+    proto::{web_socket_message::Payload, UserPainting, WebSocketMessage},
 };
 
 mod app_state;
 mod ascii_server;
 mod framebuffer;
 mod http_server;
+mod statistics;
 
 mod proto {
     include!(concat!(env!("OUT_DIR"), "/pixelstrom.rs"));
@@ -118,8 +119,8 @@ async fn random_client_paints_loop(
         }
 
         let ws_message = WebSocketMessage {
-            payload: Some(Payload::ClientPainting(ClientPainting {
-                client: "Sebidooo".to_owned(),
+            payload: Some(Payload::UserPainting(UserPainting {
+                username: "Sebidooo".to_owned(),
                 painted,
             })),
         };
