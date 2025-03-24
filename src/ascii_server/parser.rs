@@ -50,15 +50,15 @@ pub enum Response {
         rgba: u32,
     },
     Start {
-        max_pixels_per_slot: usize,
+        max_pixels_per_slot: u32,
         slot_duration: Duration,
     },
     Done {
-        num_pixels: usize,
+        num_pixels: u32,
     },
     NotYourSlot,
     QuotaExceeded {
-        max_pixels_per_slot: usize,
+        max_pixels_per_slot: u32,
     },
     SlotNotClosedInTime {
         slot_duration: Duration,

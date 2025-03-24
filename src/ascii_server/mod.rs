@@ -34,7 +34,7 @@ pub struct AsciiServer<'a> {
 
     _client_connections: HashMap<&'a str, ClientConnection<'a>>,
 
-    max_pixels_per_slot: usize,
+    max_pixels_per_slot: u32,
     slot_duration: Duration,
 
     width: u16,
@@ -45,7 +45,7 @@ impl AsciiServer<'_> {
     pub async fn new(
         shared_state: Arc<AppState>,
         listener_address: &str,
-        max_pixels_per_slot: usize,
+        max_pixels_per_slot: u32,
         slot_duration: Duration,
         width: u16,
         height: u16,

@@ -70,7 +70,7 @@ message UserStatistics {
     string username = 1;
 
     // The number of pixels/s the user is sending
-    float pixelsPerSecond = 2;
+    float averagePixelsPerRound = 2;
 
     // The average response time of the user (Completing drawing is counted as response)
     float averageResponseTimeMilliseconds = 3;

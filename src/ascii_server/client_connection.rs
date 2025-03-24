@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::Context;
 use futures::{SinkExt, StreamExt};
 use nom::Finish;
-use tokio::{net::TcpStream, select, sync::mpsc};
+use tokio::{net::TcpStream, select, sync::mpsc, time::Instant};
 use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
 use tracing::{trace, warn};
 
@@ -23,7 +23,7 @@ pub struct ClientConnection<'a> {
 
     slot_tx: mpsc::Sender<SlotEvent>,
     slot_rx: mpsc::Receiver<SlotEvent>,
-    max_pixels_per_slot: usize,
+    max_pixels_per_slot: u32,
     slot_duration: Duration,
     painted: Vec<PixelUpdate>,
 
@@ -34,14 +34,15 @@ pub struct ClientConnection<'a> {
     current_username: Option<String>,
     currently_in_slot: bool,
     painting_finished: bool,
-    current_pixel_count: usize,
+    painting_started: Instant,
+    current_pixel_count: u32,
 }
 
 impl<'a> ClientConnection<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         shared_state: &'a AppState,
-        max_pixels_per_slot: usize,
+        max_pixels_per_slot: u32,
         slot_duration: Duration,
         width: u16,
         height: u16,
@@ -60,6 +61,8 @@ impl<'a> ClientConnection<'a> {
             current_username: None,
             currently_in_slot: false,
             painting_finished: false,
+            // This is technically wrong, however I don't want to model it as `Option<Instant>`
+            painting_started: Instant::now(),
             current_pixel_count: 0,
         }
     }
@@ -128,6 +131,7 @@ impl<'a> ClientConnection<'a> {
                     } else {
                         self.currently_in_slot = true;
                         self.painting_finished = false;
+                        self.painting_started = Instant::now();
                         self.current_pixel_count = 0;
 
                         Some(Response::Start {
@@ -277,13 +281,27 @@ impl<'a> ClientConnection<'a> {
             Request::Done => {
                 self.painting_finished = true;
 
-                let num_pixels = self.painted.len();
-                let ws_update = self.shared_state.framebuffer.write().await.set_multi(
-                    self.current_username
-                        .as_ref()
-                        .context("The current username is not know. This should never happen!")?,
-                    &self.painted,
-                );
+                let username = self
+                    .current_username
+                    .as_ref()
+                    .context("The current username is not know. This should never happen!")?;
+                let num_pixels = self
+                    .painted
+                    .len()
+                    .try_into()
+                    .expect("No client should paint more than u32::MAX pixels");
+
+                let ws_update = self
+                    .shared_state
+                    .framebuffer
+                    .write()
+                    .await
+                    .set_multi(username, &self.painted);
+
+                self.shared_state
+                    .statistics
+                    .record(username, num_pixels, self.painting_started.elapsed())
+                    .await;
 
                 self.painted.clear();
 

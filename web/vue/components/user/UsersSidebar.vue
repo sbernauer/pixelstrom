@@ -54,8 +54,8 @@ export default {
     <div class="user-table">
       <div>&nbsp;</div>
       <div>Name</div>
-      <div>Pixels/sec</div>
-      <div>Response Ms</div>
+      <div>Pixels/batch</div>
+      <div>Avg response time</div>
       <div>&nbsp;</div>
       <UserDetails
         v-for="user in users"

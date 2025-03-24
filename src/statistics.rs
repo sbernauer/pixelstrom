@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::Context;
+use simple_moving_average::{SumTreeSMA, SMA};
 use tokio::{
     sync::{mpsc, RwLock},
     time::interval,
@@ -19,8 +20,17 @@ pub struct Statistics {
 }
 
 pub struct UserStats {
-    pub pixels_per_second: f32,
-    pub average_response_time_milliseconds: f32,
+    pub average_pixels_per_round: SumTreeSMA<f32, f32, 10>,
+    pub average_response_time: SumTreeSMA<Duration, u32, 10>,
+}
+
+impl UserStats {
+    pub fn new() -> Self {
+        Self {
+            average_pixels_per_round: SumTreeSMA::new(),
+            average_response_time: SumTreeSMA::from_zero(Duration::from_nanos(0)),
+        }
+    }
 }
 
 impl Statistics {
@@ -46,6 +56,16 @@ impl Statistics {
         }
     }
 
+    pub async fn record(&self, username: impl Into<String>, pixels: u32, response_time: Duration) {
+        let mut stats = self.stats.write().await;
+        let user_stats = stats.entry(username.into()).or_insert_with(UserStats::new);
+
+        user_stats
+            .average_pixels_per_round
+            .add_sample(pixels as f32);
+        user_stats.average_response_time.add_sample(response_time);
+    }
+
     pub async fn send_update(&self) -> anyhow::Result<()> {
         let all_users_as_ordered_list = self.user_scheduler.all_users_as_ordered_list().await;
         let current_stats = self.stats.read().await;
@@ -54,16 +74,24 @@ impl Statistics {
             .map(|username| match current_stats.get(username) {
                 Some(stats) => UserStatistics {
                     username: username.to_string(),
-                    pixels_per_second: stats.pixels_per_second,
-                    average_response_time_milliseconds: stats.average_response_time_milliseconds,
+                    average_pixels_per_round: stats.average_pixels_per_round.get_average(),
+                    average_response_time_milliseconds: stats
+                        .average_response_time
+                        .get_average()
+                        // TODO: Switch to [`Duration::as_millis_f32`] once stable
+                        .as_secs_f32()
+                        * 1000.0,
                 },
+
+                // We don't have any stats, so let's ship empty ones
+                // We need to send *something*, so that the user is contained in the users list
                 None => UserStatistics {
                     username: username.to_string(),
-                    pixels_per_second: 0.0,
+                    average_pixels_per_round: 0.0,
                     average_response_time_milliseconds: 0.0,
                 },
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         let ws_message = WebSocketMessage {
             payload: Some(Payload::UserStatisticsUpdate(UserStatisticsUpdate {

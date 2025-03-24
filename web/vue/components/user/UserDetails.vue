@@ -14,7 +14,7 @@ export default {
     },
     user: {
       username: String,
-      pixelsPerSecond: Number,
+      averagePixelsPerRound: Number,
       averageResponseTimeMilliseconds: Number,
     },
     followsUser: {
@@ -35,8 +35,8 @@ export default {
   <IconArrowsRight v-if="currentPaintingUser" class="icon-size" />
   <span v-else>&nbsp;</span>
   <span>{{ user.username }}</span>
-  <span>{{ user.pixelsPerSecond }}</span>
-  <span>{{ user.averageResponseTimeMilliseconds }}</span>
+  <span>{{ user.averagePixelsPerRound.toFixed(0) }}</span>
+  <span>{{ user.averageResponseTimeMilliseconds.toFixed(1) }} ms</span>
   <FollowUserButton :username="user.username" :followsUser="followsUser" @click="onClick"/>
 </template>
 

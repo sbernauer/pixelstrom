@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     let height = 1080;
     let ascii_listener_address = "[::]:1234";
     let http_listener_address = "[::]:3000";
-    let max_pixels_per_slot = 5_000;
+    let max_pixels_per_slot = 10_000;
     let slot_duration = Duration::from_millis(500);
 
     let app_state = AppState::new(slot_duration, width, height)
